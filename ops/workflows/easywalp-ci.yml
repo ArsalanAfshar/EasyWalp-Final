@@ -341,8 +341,13 @@ jobs:
           choco install innosetup -y --no-progress
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1).FullName }
-          & $iscc /DAppVersion=${{ steps.ver.outputs.version }} /DSourceDir="$PWD\dist\EasyWalp" packaging/windows/easywalp.iss
+          & $iscc /DAppVersion=${{ steps.ver.outputs.version }} /DSourceDir="$PWD\dist\EasyWalp" /O"$PWD\installer-out" /F"EasyWalp-Setup-${{ steps.ver.outputs.version }}" packaging/windows/easywalp.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
+          $built = Get-ChildItem -Recurse -Filter "EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" -Path . -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $built) { throw "the installer was built but not found" }
+          Write-Host "installer: $($built.FullName)"
+          New-Item -ItemType Directory -Force -Path installer-out | Out-Null
+          Copy-Item $built.FullName "installer-out\EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" -Force
 
       - name: Checksums + zip
         shell: pwsh
