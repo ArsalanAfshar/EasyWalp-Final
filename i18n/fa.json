@@ -90,5 +90,6 @@
   "common.yes": "بله",
   "common.no": "خیر",
   "common.close": "بستن",
-  "common.retry": "تلاش دوباره"
+  "common.retry": "تلاش دوباره",
+  "wizard.analyze": "تحلیل PSD"
 }

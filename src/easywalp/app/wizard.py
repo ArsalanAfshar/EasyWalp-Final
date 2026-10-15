@@ -27,11 +27,9 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..i18n import i18n
 from ..photocraft import PhotoCraftBinary, PhotoCraftError
-from ..pipeline import PipelineError
 from ..presets import (
     LayerRef,
     Preset,
-    PresetError,
     detect_code_span,
     import_psd_as_preset,
     split_code_text,
@@ -96,8 +94,7 @@ class WizardDialog(QDialog):
         row = QHBoxLayout()
         self.psd_edit = QLineEdit()
         pick = make_button(i18n.tr("main.browse"))
-        analyze = make_button(i18n.tr("wizard.dryRun"), accent=True)
-        analyze.setText("Analyze")
+        analyze = make_button(i18n.tr("wizard.analyze"), accent=True)
         row.addWidget(self.psd_edit, 1)
         row.addWidget(pick)
         lay.addLayout(row)
@@ -349,7 +346,7 @@ class WizardDialog(QDialog):
         i = self.stack.currentIndex()
         self.back_btn.setVisible(i > 0)
         if i == 0:
-            self.next_btn.setText("Analyze")
+            self.next_btn.setText(i18n.tr("wizard.analyze"))
             self.next_btn.setEnabled(bool(self.psd_edit.text().strip()))
         elif i == 1:
             self.next_btn.setText(i18n.tr("common.ok"))

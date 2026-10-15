@@ -90,5 +90,6 @@
   "common.yes": "Yes",
   "common.no": "No",
   "common.close": "Close",
-  "common.retry": "Retry"
+  "common.retry": "Retry",
+  "wizard.analyze": "Analyze PSD"
 }
