@@ -1,4 +1,5 @@
 """Entry point: `python -m easywalp` (GUI), `python -m easywalp gui`,
+`python -m easywalp --self-check` (or `--version`),
 `python -m easywalp <pipeline args>` (CLI), or `EasyWalp.exe Something.easywalp`
 (double-clicked preset package: import it, then open the GUI).
 
@@ -16,6 +17,12 @@ def main() -> int:
         from .app.mainwindow import import_and_run  # noqa: PLC0415
 
         return import_and_run(argv[0])
+    if argv and argv[0] == "--self-check":
+        # Used by CI and by the release smoke tests: start everything a normal run
+        # starts, print a report, exit non-zero if the build is not usable.
+        from .selfcheck import run as selfcheck_run  # noqa: PLC0415
+
+        return selfcheck_run(argv[1:])
     if argv and argv[0] == "gui":
         argv = argv[1:]
         from .app.mainwindow import run_app  # noqa: PLC0415 - lazy GUI import

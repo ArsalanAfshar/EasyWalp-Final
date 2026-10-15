@@ -26,6 +26,7 @@ hidden = [
     "easywalp.photocraft_protocol",
     "easywalp.pipeline",
     "easywalp.presets",
+    "easywalp.selfcheck",
     "easywalp.settings",
     "easywalp.themes",
     "easywalp.wizard",

@@ -1042,6 +1042,13 @@ jobs:
         shell: pwsh
         run: pyinstaller --noconfirm --clean packaging/windows/easywalp.spec
 
+      - name: Build with PyInstaller (single file)
+        # Not fatal: the installer and the zip below are still a complete release,
+        # and shipping the one-file build is a convenience, not the product.
+        continue-on-error: true
+        shell: pwsh
+        run: pyinstaller --noconfirm --clean packaging/windows/easywalp-portable.spec
+
       - name: Smoke test app + engine
         shell: pwsh
         run: |
@@ -1059,6 +1066,39 @@ jobs:
           & $engine --version
           if ($LASTEXITCODE -ne 0) { throw "the engine exited with $LASTEXITCODE" }
 
+      - name: Self-check the built app (it really starts)
+        # --version only proves Python started. This starts the real window offscreen
+        # and fails on the things that make a download "not work": a missing Qt
+        # platform plugin, an assets folder PyInstaller did not copy, an engine that
+        # is not next to the exe, a data directory the app cannot write.
+        shell: pwsh
+        run: |
+          function Test-EasyWalp($path, $label) {
+            if (-not (Test-Path $path)) { throw "missing $path" }
+            $env:QT_QPA_PLATFORM = "offscreen"
+            $proc = Start-Process -FilePath $path -ArgumentList "--self-check" -Wait -PassThru -NoNewWindow `
+                      -RedirectStandardOutput "selfcheck-$label.txt" -RedirectStandardError "selfcheck-$label.err.txt"
+            Get-Content "selfcheck-$label.txt" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+            if ($proc.ExitCode -ne 0) {
+              # A build without the offscreen plugin is not broken - retry on the default.
+              Write-Host "::warning::$label did not pass offscreen (exit $($proc.ExitCode)); retrying with the default platform"
+              Get-Content "selfcheck-$label.err.txt" -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
+              Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+              $proc = Start-Process -FilePath $path -ArgumentList "--self-check" -Wait -PassThru -NoNewWindow `
+                        -RedirectStandardOutput "selfcheck-$label-default.txt" -RedirectStandardError "selfcheck-$label-default.err.txt"
+              Get-Content "selfcheck-$label-default.txt" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+              Get-Content "selfcheck-$label-default.err.txt" -ErrorAction SilentlyContinue | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
+            }
+            if ($proc.ExitCode -ne 0) { throw "$label failed its self-check with exit $($proc.ExitCode)" }
+          }
+          Test-EasyWalp "dist/EasyWalp/EasyWalp.exe" "onedir"
+          $portable = "dist/EasyWalp-Portable/EasyWalp-Portable.exe"
+          if (Test-Path $portable) {
+            Test-EasyWalp $portable "portable"
+          } else {
+            Write-Host "::warning::no single-file build to self-check"
+          }
+
       - name: Build Inno Setup installer
         shell: pwsh
         run: |
@@ -1067,11 +1107,14 @@ jobs:
           if (-not (Test-Path $iscc)) { $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1).FullName }
           & $iscc /DAppVersion=${{ steps.ver.outputs.version }} /DSourceDir="$PWD\dist\EasyWalp" /O"$PWD\installer-out" /F"EasyWalp-Setup-${{ steps.ver.outputs.version }}" packaging/windows/easywalp.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC exited with $LASTEXITCODE" }
+          $target = Join-Path (Get-Location) "installer-out\EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe"
           $built = Get-ChildItem -Recurse -Filter "EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" -Path . -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $built) { throw "the installer was built but not found" }
-          Write-Host "installer: $($built.FullName)"
-          New-Item -ItemType Directory -Force -Path installer-out | Out-Null
-          Copy-Item $built.FullName "installer-out\EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" -Force
+          if ($built.FullName -ne $target) {
+            New-Item -ItemType Directory -Force -Path installer-out | Out-Null
+            Copy-Item $built.FullName $target -Force
+          }
+          Write-Host "installer: $target"
 
       - name: Checksums + zip
         shell: pwsh
@@ -1079,6 +1122,7 @@ jobs:
           python scripts/release/package_release.py `
             --version ${{ steps.ver.outputs.version }} `
             --installer "installer-out/EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" `
+            --portable "dist/EasyWalp-Portable/EasyWalp-Portable.exe" `
             --dist dist/EasyWalp
 
       - name: Upload release artefacts
@@ -1087,8 +1131,10 @@ jobs:
           name: release-${{ github.run_id }}
           path: |
             release/EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe
+            release/EasyWalp-Portable-${{ steps.ver.outputs.version }}.exe
             release/EasyWalp-Setup-${{ steps.ver.outputs.version }}-windows.zip
             release/SHA256SUMS.txt
+          if-no-files-found: warn
 
   release-publish:
     name: "Release: publish to GitHub Releases"
@@ -1125,12 +1171,11 @@ jobs:
             echo
             echo "Powered by PhotoCraft engine (MIT OR Apache-2.0)."
           } > notes.md
+          ASSETS=$(ls release/*.exe release/*.zip release/SHA256SUMS.txt 2>/dev/null)
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "release/EasyWalp-Setup-$VERSION-windows.zip" "release/EasyWalp-Setup-$VERSION.exe" "release/SHA256SUMS.txt" --clobber
+            gh release upload "$TAG" $ASSETS --clobber
           else
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "EasyWalp $VERSION" --notes-file notes.md \
-              "release/EasyWalp-Setup-$VERSION-windows.zip" \
-              "release/EasyWalp-Setup-$VERSION.exe" \
-              "release/SHA256SUMS.txt"
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "EasyWalp $VERSION" --notes-file notes.md $ASSETS
           fi
+          echo "published:"; gh release view "$TAG" --json assets --jq '.assets[] | "  \(.name)  \(.size)"'
           echo "Release published: https://github.com/${{ github.repository }}/releases/tag/$TAG"

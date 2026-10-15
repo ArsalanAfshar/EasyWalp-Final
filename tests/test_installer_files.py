@@ -96,3 +96,29 @@ def _as_rows(path: Path) -> list[dict[str, str]]:
         if row:
             rows.append(row)
     return rows
+
+
+def _quoted_list(path: Path, name: str) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(rf"^{name} = \[(.*?)^\]", text, re.S | re.M)
+    assert match, f"{name} = [...] not found in {path.name}"
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def test_pyinstaller_specs_bundle_the_same_things():
+    """The single-file build must not drift behind the onedir build.
+
+    Both specs are hand-written; a module (or a data folder) added to one and not
+    the other is an ImportError/first-start failure that only shows up when a user
+    runs that particular download.
+    """
+    onedir = _quoted_list(WINDOWS / "easywalp.spec", "hidden")
+    portable = _quoted_list(WINDOWS / "easywalp-portable.spec", "hidden")
+    assert onedir == portable, "easywalp.spec and easywalp-portable.spec list different hidden imports"
+    assert "easywalp.selfcheck" in onedir, "--self-check must be importable inside the frozen app"
+
+    for name in ("easywalp.spec", "easywalp-portable.spec"):
+        text = (WINDOWS / name).read_text(encoding="utf-8")
+        assert '(str(ROOT / "assets"), "assets")' in text, f"{name} does not bundle assets/"
+        assert '(str(ROOT / "i18n"), "i18n")' in text, f"{name} does not bundle i18n/"
+        assert '"assets/photocraft"' in text, f"{name} does not stage the engine"

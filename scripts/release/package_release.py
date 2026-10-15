@@ -4,17 +4,22 @@
 Produces in ``release/``:
 
     EasyWalp-Setup-<version>.exe               the Inno Setup installer
-    EasyWalp-Setup-<version>-windows.zip       installer + portable app (unzip and run)
-    SHA256SUMS.txt                             checksums of both
+    EasyWalp-Portable-<version>.exe            single file, unzip-free, double-click to run
+    EasyWalp-Setup-<version>-windows.zip       installer + single file + the onedir tree
+    SHA256SUMS.txt                             checksums of all of them
 
-The portable copy inside the zip is ``EasyWalp/`` exactly as PyInstaller built it
-(the same tree the installer puts into ``%LOCALAPPDATA%\\Programs\\EasyWalp``), so a
-colleague who cannot install anything can unzip and double-click ``EasyWalp.exe``.
+The zip holds three ways to run the same build: the installer (no admin rights
+needed), the single-file portable exe, and ``portable/EasyWalp/`` exactly as
+PyInstaller built it (the tree the installer puts into
+``%LOCALAPPDATA%\\Programs\\EasyWalp``). The single file is the one to send someone
+who "downloaded it and it does not start": nothing to unpack, nothing to keep
+together.
 
 Usage (CI):
 
     python scripts/release/package_release.py --version 1.0.0 \
-        --installer installer-out/EasyWalp-Setup-1.0.0.exe --dist dist/EasyWalp
+        --installer installer-out/EasyWalp-Setup-1.0.0.exe \
+        --portable dist/EasyWalp-Portable/EasyWalp-Portable.exe --dist dist/EasyWalp
 """
 from __future__ import annotations
 
@@ -51,10 +56,13 @@ def add_tree(zf: zipfile.ZipFile, folder: Path, prefix: str) -> int:
     return count
 
 
-def build_portable_zip(version: str, dist: Path, installer: Path, out_zip: Path) -> int:
+def build_portable_zip(version: str, dist: Path, installer: Path, out_zip: Path,
+                       portable: Path | None = None) -> int:
     """Installer + portable app in one zip (the file the README points at)."""
     with zipfile.ZipFile(out_zip, "w") as zf:
         zf.write(installer, installer.name, compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
+        if portable is not None and portable.is_file():
+            zf.write(portable, portable.name, compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
         files = add_tree(zf, dist, f"portable/{dist.name}")
     if files == 0:
         raise PackagingError(f"the PyInstaller output folder is empty: {dist}")
@@ -67,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--installer", type=Path, required=True, help="the built installer .exe")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist" / "EasyWalp",
                         help="the PyInstaller onedir output (default: dist/EasyWalp)")
+    parser.add_argument("--portable", type=Path, default=ROOT / "dist" / "EasyWalp-Portable" / "EasyWalp-Portable.exe",
+                        help="the PyInstaller onefile output (optional but recommended)")
     parser.add_argument("--out", type=Path, default=ROOT / "release",
                         help="release folder (default: release/)")
     args = parser.parse_args(argv)
@@ -84,18 +94,30 @@ def main(argv: list[str] | None = None) -> int:
     installer = out / f"EasyWalp-Setup-{version}.exe"
     if args.installer.resolve() != installer.resolve():
         installer.write_bytes(args.installer.read_bytes())
+
+    portable = out / f"EasyWalp-Portable-{version}.exe"
+    if args.portable.is_file():
+        if args.portable.resolve() != portable.resolve():
+            portable.write_bytes(args.portable.read_bytes())
+    else:
+        # Not fatal: the installer and the onedir zip are still a complete release.
+        print(f"warning: no single-file build at {args.portable} - shipping without it", file=sys.stderr)
+        portable = None
+
     zip_path = out / f"EasyWalp-Setup-{version}-windows.zip"
     try:
-        count = build_portable_zip(version, args.dist, installer, zip_path)
+        count = build_portable_zip(version, args.dist, installer, zip_path, portable)
     except PackagingError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
+    files = [installer, zip_path] + ([portable] if portable is not None else [])
     sums = out / "SHA256SUMS.txt"
-    lines = [f"{sha256(installer)}  {installer.name}", f"{sha256(zip_path)}  {zip_path.name}"]
-    sums.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    sums.write_text("\n".join(f"{sha256(p)}  {p.name}" for p in files) + "\n", encoding="utf-8")
 
     print(f"installer: {installer} ({installer.stat().st_size / 1e6:.1f} MB)")
+    if portable is not None:
+        print(f"portable:  {portable} ({portable.stat().st_size / 1e6:.1f} MB)")
     print(f"zip:       {zip_path} ({zip_path.stat().st_size / 1e6:.1f} MB, {count} files)")
     print(f"checksums: {sums}")
     return 0
