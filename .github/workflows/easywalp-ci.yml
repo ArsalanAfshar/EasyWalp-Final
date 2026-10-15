@@ -614,6 +614,10 @@ jobs:
         shell: bash
         run: |
           P4A_BUILD=android/build/app/.buildozer/android/platform
+          if [ ! -d "$P4A_BUILD" ]; then
+            echo "no $P4A_BUILD yet (nothing came out of the cache) - nothing to drop"
+            exit 0
+          fi
           find "$P4A_BUILD" -maxdepth 4 -type d \( -name venv -o -name python-installs \) -print
           find "$P4A_BUILD" -maxdepth 4 -type d \( -name venv -o -name python-installs \) -exec rm -rf {} +
           find "$P4A_BUILD" -maxdepth 4 -type d \( -name venv -o -name python-installs \) -print

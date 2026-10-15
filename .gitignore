@@ -23,7 +23,8 @@ venv/
 build/
 dist/
 installer-out/
-release/
+/release/
+# NB: anchored - `release/` would also ignore scripts/release/, which is source.
 src/easywalp/_build_version.py
 
 # Rust/PhotoCraft build artefacts (built in CI from the pinned commit, never committed)
