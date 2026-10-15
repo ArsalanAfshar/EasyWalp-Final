@@ -16,14 +16,21 @@ git remote add origin https://github.com/ArsalanAfshar/<repo>.git
 git push -u origin main
 ```
 
-## One-time: enable the binary staging workflow
+## One-time: install the CI workflows
 
-If the `.github/workflows/photocraft-binaries.yml` file is missing from the repo
-(GitHub blocks some app-integrations from creating workflow files), add it by
-hand: Actions tab → New workflow, or commit the file from GitHub's web editor
-(Add file → Create new file → paste the file → `.github/workflows/photocraft-binaries.yml`).
-Then Actions → "PhotoCraft binaries" → Run workflow — it builds the pinned
-PhotoCraft and stages ready binaries on the `photocraft-bin` branch.
+The three workflow files ship in `ops/workflows/` because GitHub rejects
+workflow files pushed by some app integrations. In your own clone run once:
+
+```bash
+python scripts/install_workflows.py
+git add .github/workflows
+git commit -m "Install CI workflows"
+git push
+```
+
+Then open Actions → "PhotoCraft binaries" → Run workflow. It builds the pinned
+PhotoCraft and stages ready binaries on the `photocraft-bin` branch (you can
+download them from the run's artefacts too).
 
 ## Publish a release
 

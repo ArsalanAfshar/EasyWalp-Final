@@ -87,6 +87,9 @@ Full installer + release build is automated: push a tag `v1.2.3` →
 GitHub Actions builds the pinned `photocraft-cli`, the PyInstaller app and the
 Inno Setup installer, then publishes
 `EasyWalp-Setup-1.2.3-windows.zip` with SHA256 checksums to Releases.
+One-time setup on your own machine (GitHub rejects workflow files pushed by app
+integrations): `python scripts/install_workflows.py`, then commit & push the
+`.github/workflows` folder it creates.
 Step-by-step for non-developers: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 ## Feasibility spike (PhotoCraft proof)
