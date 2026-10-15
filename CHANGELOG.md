@@ -3,6 +3,25 @@
 All notable changes to EasyWalp are documented here. Format: Keep a Changelog,
 Semantic Versioning.
 
+## [0.1.1] - 2026-10-15
+
+### Fixed
+- **Desktop: the wizard's "Analyze PSD" button did nothing.** Two faults on the
+  same page: the button next to *Browse* was created and connected but never added
+  to the layout, so it was not on screen at all; and the button in the nav row was
+  enabled once, when the dialog opened, so a path typed or pasted into the field
+  afterwards left it dead. Both now follow the path field, Enter analyzes, and the
+  warning for a wrong path names the file.
+- A PSD the engine rejects no longer disables the button for good, and no longer
+  leaves an unconfigured preset behind in the preset list.
+- **Release pipeline:** the installer is attached to the release (the copy step
+  copied the file onto itself and killed the job before it uploaded anything), the
+  Windows installer is installed, started and killed again on a clean runner before
+  a release goes out, and `--self-check` proves a built app starts (window, assets,
+  engine) instead of only printing a version.
+- `EasyWalp-Portable-<version>.exe`: the same build as one double-clickable file,
+  for machines where nothing should be installed.
+
 ## [0.1.0] - 2026-10-15
 
 ### Added

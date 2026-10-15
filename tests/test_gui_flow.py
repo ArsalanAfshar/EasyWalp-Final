@@ -329,3 +329,110 @@ def test_presets_dialog_lists_and_exports(qapp, data_dir, engine_env, i18n_en, p
     assert target.is_file()
     # exporting must not disturb the installed presets
     assert sorted(p.name for p in Preset.load_all()) == ["Alpha", "Beta"]
+
+
+# --------------------------------------------------- page 1: the Analyze buttons
+def _pump(qapp, condition, timeout=20.0):
+    """Spin the event loop until `condition()` - worker threads deliver via signals."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    ok = False
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if condition():
+            ok = True
+            break
+        time.sleep(0.02)
+    # let the worker thread finish and clean itself up before the dialog goes away
+    for _ in range(5):
+        qapp.processEvents()
+        time.sleep(0.02)
+    return ok
+
+
+def test_page_one_has_a_live_analyze_button(qapp, data_dir, engine_env, i18n_en, psd, quiet_box, monkeypatch):
+    """The button the user could not press.
+
+    Two separate faults made it dead: the inline button next to Browse was created and
+    connected but never added to the layout (so it was not on screen at all), and the
+    "Analyze PSD" button in the nav row was decided once, when the dialog was built -
+    a path typed or pasted into the field afterwards never re-enabled it.
+    """
+    from easywalp.app.wizard import WizardDialog
+
+    dialog = WizardDialog(engine_env["settings"], _binary(engine_env))
+    page = dialog.stack.widget(0)
+
+    # the inline button is really part of the page
+    assert dialog._analyze_btn.parent() is page
+    # nothing chosen yet -> nothing to analyze
+    assert dialog.next_btn.isEnabled() is False
+    assert dialog._analyze_btn.isEnabled() is False
+
+    # a path typed by the user (not picked in the file dialog) must enable both
+    dialog.psd_edit.setText(str(psd))
+    assert dialog._analyze_btn.isEnabled() is True
+    assert dialog.next_btn.isEnabled() is True
+
+    dialog.psd_edit.clear()
+    assert dialog.next_btn.isEnabled() is False
+
+    # and pressing that button actually analyzes and moves on to page 2
+    dialog.psd_edit.setText(str(psd))
+    monkeypatch.setattr(dialog, "_start_thumbnails", lambda: None)
+    dialog.next_btn.click()
+    assert _pump(qapp, lambda: dialog.stack.currentIndex() == 1), "the analyze never finished"
+    assert dialog.preset is not None
+    assert dialog.candidates, "no layers were read from the PSD"
+
+
+def test_page_one_analyze_keys(qapp, data_dir, engine_env, i18n_en, psd, quiet_box, monkeypatch):
+    """Enter in the path field is the same as pressing Analyze PSD."""
+    from easywalp.app.wizard import WizardDialog
+
+    dialog = WizardDialog(engine_env["settings"], _binary(engine_env))
+    monkeypatch.setattr(dialog, "_start_thumbnails", lambda: None)
+    dialog.psd_edit.setText(str(psd))
+    dialog.psd_edit.returnPressed.emit()
+    assert _pump(qapp, lambda: dialog.stack.currentIndex() == 1), "Enter did not analyze"
+
+
+def test_page_one_recovers_from_a_missing_or_broken_psd(
+    qapp, data_dir, engine_env, i18n_en, tmp_path, psd, quiet_box, monkeypatch
+):
+    """A wrong path, or a PSD the engine rejects, must leave the button pressable."""
+    from easywalp.app.wizard import WizardDialog
+
+    dialog = WizardDialog(engine_env["settings"], _binary(engine_env))
+
+    missing = tmp_path / "renamed-or-deleted.psd"
+    dialog.psd_edit.setText(str(missing))
+    dialog.next_btn.click()
+    assert quiet_box.calls and "renamed-or-deleted.psd" in quiet_box.calls[-1][1]
+    assert dialog.stack.currentIndex() == 0
+    assert dialog.next_btn.isEnabled() is True
+    assert dialog._analyze_btn.isEnabled() is True
+
+    # the engine blows up on this one: buttons come back and the wizard stays put
+    import easywalp.app.wizard as wizard_mod
+
+    def boom(*_a, **_k):
+        raise RuntimeError("not a photoshop file")
+
+    reported = []
+    monkeypatch.setattr(WizardDialog, "_default_fail",
+                        lambda _self, title, details: reported.append((title, details)))
+    monkeypatch.setattr(wizard_mod.wiz, "inspect_psd", boom)
+    monkeypatch.setattr(dialog, "_start_thumbnails", lambda: None)
+    dialog.psd_edit.setText(str(psd))
+    dialog.next_btn.click()
+    assert _pump(qapp, lambda: bool(reported)), "the failure was never reported"
+    assert "photoshop" in str(reported[-1])
+    assert dialog.stack.currentIndex() == 0
+    assert dialog.next_btn.isEnabled() is True
+    assert dialog._analyze_btn.isEnabled() is True
+    # and the clone that failed halfway is not left behind as an empty preset
+    from easywalp.presets import Preset
+
+    assert Preset.load_all() == []

@@ -56,6 +56,7 @@ class WizardDialog(QDialog):
         self.thumbs: dict[int, Path] = {}
         self._analyzed = False
         self._saved = False
+        self._busy = False  # an analysis is running: page 1's buttons stay disabled
         self._text_full = ""
         self._text_font = ""
         self._font_missing: list[str] = []
@@ -84,6 +85,12 @@ class WizardDialog(QDialog):
         self.back_btn.clicked.connect(self._go_back)
         self.cancel_btn.clicked.connect(self._cancel)
         self.next_btn.clicked.connect(self._go_next)
+        # Page 1 has *two* buttons that mean "Analyze PSD": the one next to Browse and
+        # the nav one. Both have to follow the path field - until now their state was
+        # decided once, when the dialog was built, so a path typed or pasted into the
+        # field afterwards left them disabled and clicking did nothing.
+        self.psd_edit.textChanged.connect(lambda _t: self._sync_buttons())
+        self.psd_edit.returnPressed.connect(self._go_next)
         self._sync_buttons()
 
     # ------------------------------------------------------------ page 1
@@ -99,6 +106,7 @@ class WizardDialog(QDialog):
         analyze = make_button(i18n.tr("wizard.analyze"), accent=True)
         row.addWidget(self.psd_edit, 1)
         row.addWidget(pick)
+        row.addWidget(analyze)  # it was connected but never added: the button did not exist on screen
         lay.addLayout(row)
         pick.clicked.connect(self._pick_psd)
         analyze.clicked.connect(self._analyze)
@@ -118,20 +126,37 @@ class WizardDialog(QDialog):
     def _analyze(self) -> None:
         psd = Path(self.psd_edit.text().strip())
         if not psd.exists():
-            QMessageBox.warning(self, i18n.tr("error.title"), f"{psd}")
+            QMessageBox.warning(self, i18n.tr("error.title"), i18n.tr("wizard.psdMissing", path=str(psd)))
             return
         self.pick_status.setText("…")
-        self._analyze_btn.setEnabled(False)
+        self._busy = True
+        self._sync_buttons()
+        created: list[Preset] = []  # the clone made in the worker, so a failure can drop it
 
         def work():
             preset = import_psd_as_preset(psd, psd.stem, __version__)
+            created.append(preset)
             info = wiz.inspect_psd(self.binary, preset.template_path)
             return preset, info
 
-        self._call(work, self._analyzed_ok)
+        self._call(work, self._analyzed_ok, on_fail=lambda t, d: self._analyze_failed(t, d, created))
+
+    def _analyze_failed(self, title: str, details: str, created: list | None = None) -> None:
+        """A failed analysis must leave the button usable - the PSD is usually fixable.
+
+        The half-built preset is removed: otherwise the wizard looks like it did
+        nothing while an unconfigured preset shows up in the preset list.
+        """
+        for preset in created or ():
+            preset.delete()
+        self._busy = False
+        self.pick_status.setText("")
+        self._sync_buttons()
+        self._default_fail(title, details)
 
     def _analyzed_ok(self, result) -> None:
         preset, info = result
+        self._busy = False
         self.preset = preset
         self.doc_info = info
         self.candidates = wiz.top_level_layers(info)
@@ -141,8 +166,6 @@ class WizardDialog(QDialog):
         )
         self._populate_combos()
         self._start_thumbnails()
-        self._analyze_btn.setEnabled(True)
-        self.next_btn.setEnabled(True)
         self.stack.setCurrentIndex(1)
         self._sync_buttons()
 
@@ -344,12 +367,18 @@ class WizardDialog(QDialog):
             self.preset.delete()
         self.reject()
 
+    def _can_analyze(self) -> bool:
+        """A path in the field and no analysis in flight."""
+        return bool(self.psd_edit.text().strip()) and not self._busy
+
     def _sync_buttons(self) -> None:
         i = self.stack.currentIndex()
         self.back_btn.setVisible(i > 0)
         if i == 0:
             self.next_btn.setText(i18n.tr("wizard.analyze"))
-            self.next_btn.setEnabled(bool(self.psd_edit.text().strip()))
+            ready = self._can_analyze()
+            self.next_btn.setEnabled(ready)
+            self._analyze_btn.setEnabled(ready)
         elif i == 1:
             self.next_btn.setText(i18n.tr("common.ok"))
         elif i == 2:

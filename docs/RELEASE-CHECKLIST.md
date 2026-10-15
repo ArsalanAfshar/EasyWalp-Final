@@ -34,13 +34,13 @@ it like any other file.
 ## Publish a release (Option 1: click "Run workflow" — no tag needed)
 
 1. GitHub → **Actions** tab → **EasyWalp CI** → **Run workflow** →
-   type the version, e.g. `0.1.0` → **Run workflow**.
+   type the version, e.g. `0.1.1` → **Run workflow**.
    Optional: set *android_abis* to `arm64-v8a,x86` (or `x86`) and tick
    *android_emulator* to also install the APK on an emulator and run the
    on-device self-test (engine, PSD analysis, 2K/4K generation, gallery export).
    The self-test needs the x86 ABI: an arm64-only APK cannot run on the emulator.
 2. The pipeline builds the pinned PhotoCraft engine, the app, the installer,
-   creates the `v0.1.0` tag itself and publishes the release when green.
+   creates the `v0.1.1` tag itself and publishes the release when green.
 
 ## Publish a release (Option 2: push a v* tag)
 
