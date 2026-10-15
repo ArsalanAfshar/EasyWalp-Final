@@ -104,53 +104,14 @@ jobs:
 
       # The Android/Kivy screens need a real GL context, so they get their own run
       # on a virtual X server with Mesa's software renderer.
-      - name: Run the Android UI tests (xvfb + software GL)
-        id: kivyui
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set +e
-          (
-            sudo apt-get install -y xvfb libsdl2-2.0-0 libgl1 libglx-mesa0 libgl1-mesa-dri \
-                                    libegl1 libgles2 libglu1-mesa libxkbcommon-x11-0
-            pip install kivy==2.3.1 arabic-reshaper python-bidi
-            # Building the widgets creates GL textures, and Kivy only survives some
-            # of the headless Mesa backends; try them in order and keep the first
-            # one that reports green (the log shows which one worked).
-            STATUS=1
-            for cfg in \
-              "KIVY_GL_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe" \
-              "KIVY_GL_BACKEND=sdl2 LIBGL_ALWAYS_SOFTWARE=1" \
-              "KIVY_GL_BACKEND=mock" \
-            ; do
-              echo "=== pytest with $cfg"
-              env $cfg KIVY_NO_ARGS=1 xvfb-run -a -s "-screen 0 1280x1024x24" \
-                python -m pytest -q -rs tests/test_android_ui.py
-              STATUS=$?
-              echo "=== exit=$STATUS with $cfg"
-              [ "$STATUS" -eq 0 ] && break
-            done
-            exit "$STATUS"
-          ) > kivy-output.txt 2>&1
-          STATUS=$?
-          tail -60 kivy-output.txt
-          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
-
-      - name: Publish the Android UI log
-        if: runner.os == 'Linux' && steps.kivyui.outputs.status != '0'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python scripts/ci/publish_log.py --file kivy-output.txt \
-            --job-name "pytest (${{ matrix.os }})" --title "kivy ui" || true
-
-
+      # The Kivy screens are *not* tested here: every GL backend segfaults when
+      # Kivy creates textures under Xvfb. They are built and driven on a real
+      # Android runtime instead - see the `ui_screens` step of android-selftest.
       - name: Fail if the tests failed
-        if: steps.pytests.outputs.status != '0' || (runner.os == 'Linux' && steps.kivyui.outputs.status != '0')
+        if: steps.pytests.outputs.status != '0'
         shell: bash
         run: |
-          echo "::error::pytest exited with ${{ steps.pytests.outputs.status }} (kivy: ${{ steps.kivyui.outputs.status }})"
+          echo "::error::pytest exited with ${{ steps.pytests.outputs.status }}"
           exit 1
 
   # ------------------------------------------------- ready engine binaries
@@ -378,25 +339,44 @@ jobs:
 
       # Android can only *execute* a file that is a native library, so the engine
       # ships as lib/<abi>/libphotocraft_cli.so. cargo-ndk copies the binaries it
-      # produced itself; when its library mode gives up ("No usable artifacts
-      # produced by cargo", which happens on multi-target runs) the binaries are
-      # still in target/<triple>/release - this step puts them where they belong.
+      # produced itself - except when its library mode gives up after a multi-target
+      # build ("No usable artifacts produced by cargo"), which is exactly what
+      # happens here: the binaries are fine, they just are not collected. This step
+      # finds them wherever the build left them and decides the job's fate.
       - name: Bundle the engine libraries the APK needs
         id: libs
-        if: steps.build.outputs.status == '0'
+        if: always() && steps.build.outcome == 'success'
         shell: bash
         run: |
-          set -e
+          set +e
           NDK="$ANDROID_NDK_HOME"
           LLVM=$(find "$NDK" -name llvm-readelf -type f -print -quit | xargs -r dirname)
           [ -n "$LLVM" ] || echo "::warning::llvm-readelf not found; skipping the ELF report"
+          echo "=== what the build left behind ==="
+          find engines-android -type f -exec ls -l {} + 2>/dev/null | sort -k9
+          for triple in aarch64-linux-android i686-linux-android; do
+            ls -l "../photocraft-src/target/$triple/release" 2>/dev/null | grep photocraft-cli
+          done
+          OK=1
           for pair in "arm64-v8a:aarch64-linux-android" "x86:i686-linux-android"; do
             ABI="${pair%%:*}"; TRIPLE="${pair##*:}"
             SO="engines-android/$ABI/libphotocraft_cli.so"
-            if [ ! -f "$SO" ]; then
-              mkdir -p "engines-android/$ABI"
-              cp "../photocraft-src/target/$TRIPLE/release/photocraft-cli" "$SO"
-              echo "cargo-ndk left $ABI behind; copied it from target/$TRIPLE/release"
+            if [ ! -s "$SO" ]; then
+              for cand in "engines-android/$ABI/photocraft-cli" \
+                          "engines-android/$ABI/libphotocraft-cli.so" \
+                          "../photocraft-src/target/$TRIPLE/release/photocraft-cli"; do
+                if [ -s "$cand" ]; then
+                  mkdir -p "engines-android/$ABI"
+                  cp "$cand" "$SO"
+                  echo "harvested $ABI from $cand"
+                  break
+                fi
+              done
+            fi
+            if [ ! -s "$SO" ]; then
+              echo "::error::no engine binary for $ABI (looked in engines-android/$ABI and target/$TRIPLE/release)"
+              OK=0
+              continue
             fi
             chmod 755 "$SO"
             echo "--- $ABI ($(stat -c%s "$SO") bytes)"
@@ -414,10 +394,12 @@ jobs:
               fi
             fi
           done
+          echo "=== the engine artefact ==="
           find engines-android -type f -exec ls -l {} + | sort -k9
+          [ "$OK" = "1" ] || exit 1
 
       - name: Publish the build log
-        if: steps.build.outputs.status != '0' || steps.libs.outcome == 'failure'
+        if: steps.build.outputs.status != '0'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -425,10 +407,14 @@ jobs:
           python scripts/ci/publish_log.py --file android-build.log \
             --job-name "Build photocraft-cli (pinned, android)" --title "android engine build" || true
 
-      - name: Fail if the cross-compile failed
-        if: steps.build.outputs.status != '0' || steps.libs.outcome == 'failure'
+      # The single gate: the engine artefact above is what matters. cargo-ndk's own
+      # exit status is only interesting when the harvest found nothing.
+      - name: Fail if the engine is incomplete
+        if: steps.libs.outcome != 'success'
         shell: bash
-        run: exit 1
+        run: |
+          echo "::error::cargo-ndk exited with ${{ steps.build.outputs.status }} and no usable engine was found"
+          exit 1
 
       - name: Upload the Android engine
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -626,10 +612,19 @@ jobs:
       - name: Checkout EasyWalp
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Work out the APK artefact name
+        id: name
+        shell: bash
+        run: |
+          # The apk job replaces the commas in android_abis with dashes.
+          SAFE=$(echo "${{ inputs.android_abis }}" | tr ',' '-')
+          echo "safe=$SAFE" >> "$GITHUB_OUTPUT"
+          echo "looking for easywalp-apk-${{ inputs.version }}-$SAFE"
+
       - name: Download the APK
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: easywalp-apk-${{ inputs.version }}-${{ inputs.android_abis }}
+          name: easywalp-apk-${{ inputs.version }}-${{ steps.name.outputs.safe }}
           path: apk
 
       - name: Boot an emulator and run the self-test
@@ -660,7 +655,7 @@ jobs:
             adb install -r -t "$APK"
             adb shell pm list packages | grep wallify
             adb shell mkdir -p /sdcard/Android/data/$PACKAGE/files/selftest
-            adb shell "echo '{\"engine\": true, \"pipeline\": true, \"export\": true}' > /sdcard/Android/data/$PACKAGE/files/selftest/request.json"
+            adb shell "echo '{\"engine\": true, \"pipeline\": true, \"export\": true, \"ui\": true}' > /sdcard/Android/data/$PACKAGE/files/selftest/request.json"
             adb shell cat /sdcard/Android/data/$PACKAGE/files/selftest/request.json
             adb shell monkey -p $PACKAGE -c android.intent.category.LAUNCHER 1
             echo "--- waiting for the report ---"

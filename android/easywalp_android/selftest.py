@@ -9,7 +9,12 @@ actual end-to-end run, not just "it compiled".
 
 Request:
 
-    {"engine": true, "pipeline": true, "export": false, "keep": false}
+    {"engine": true, "pipeline": true, "export": false, "ui": true, "keep": false}
+
+``ui`` builds the whole Kivy screen tree on the device. That check lives here and
+not in the desktop CI because Kivy segfaults when it creates textures under Xvfb
+(no GL backend survives), while on Android the exact same code path runs against
+the real GLES driver - and that is the environment the APK ships into.
 
 Result: ``{"ok": bool, "steps": [...], "elapsed": float, "platform": {...}}``
 """
@@ -80,6 +85,9 @@ def run(request: dict) -> dict:
 
         if request.get("export"):
             _export_step(core, work, step)
+
+        if request.get("ui", True):
+            _ui_step(core, step)
     except Exception as e:  # noqa: BLE001 - the report is the point
         log.exception("selftest crashed")
         result["steps"].append({"name": "crash", "ok": False, "detail": f"{e}\n{traceback.format_exc()}"})
@@ -161,6 +169,58 @@ def _export_step(core, work: Path, step) -> None:
         step("gallery_export", bool(handles) or not storage.rich, f"{len(handles)} file(s) {error}")
     except Exception as e:  # noqa: BLE001
         step("gallery_export", False, f"{e}\n{traceback.format_exc()}")
+
+
+def _ui_step(core, step) -> None:
+    """Build and drive the whole Kivy UI - the desktop CI cannot run this.
+
+    The screens are constructed exactly like the app constructs them at startup
+    (``EasyWalpApp.build()``), then every screen is entered (`on_enter_screen`),
+    both languages and both themes are applied and the home screen's code preview
+    is refreshed. A crash or an exception anywhere in that path is what a user
+    would see as "the app does not open", so it is worth failing the build over.
+    """
+    try:
+        from easywalp.i18n import i18n
+        from easywalp.pipeline import plan_names
+
+        from .ui.app import EasyWalpApp, SCREENS
+
+        app = EasyWalpApp()
+        root = app.build()
+        names = [screen.name for screen in app.sm.screens]
+        app.retranslate()
+        for name in SCREENS:
+            app.go(name)
+            screen = app.sm.get_screen(name)
+            if hasattr(screen, "retranslate"):
+                screen.retranslate()
+        app.go("home")
+        home = app.sm.get_screen("home")
+
+        app.toggle_language()
+        rtl_ok = i18n.language == "fa" and app._lang_button.text == "EN"
+        app.toggle_language()
+        app.apply_theme("light")
+        app.apply_theme("dark")
+
+        # The home screen must show the code for the current inputs (the first
+        # thing a user checks before pressing Generate).
+        preset = next(iter(core.presets()), None)
+        preview_ok = True
+        if preset is not None:
+            core.settings.last_preset_id = preset.id
+            home.on_enter_screen()
+            home.number_input.text = "236"
+            home.refresh_preview()
+            info = plan_names(preset.options, "O", 236, preset.options.resolution_key)
+            preview_ok = info.code in home.code_value.text
+        ok = root.orientation == "vertical" and names == list(SCREENS) and rtl_ok and preview_ok
+        step("ui_screens", ok,
+             f"screens={names} language={i18n.language} rtl={rtl_ok} preview={preview_ok} "
+             f"widgets={len(root.children)}")
+    except Exception as e:  # noqa: BLE001 - report, never crash the app
+        step("ui_screens", False, f"{e}\n{traceback.format_exc()}")
 
 
 def _image_size(path: Path) -> list[int]:

@@ -4,6 +4,11 @@ Kivy needs a window provider for ``dp()``; a sandbox without libGL has none, so 
 event loop's window is replaced by a tiny stub *before* Kivy widgets are
 instantiated. Everything else is the real app: the real screens, the real core and
 the fake engine from ``tests/fake_engine.py``.
+
+These run locally on a machine with a working GL stack. CI does not run them: Kivy
+segfaults in the texture path under Xvfb (all backends), so the same ground is
+covered on the device by the ``ui_screens`` step of ``android-selftest``, which
+builds the screens on a real Android GLES driver.
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ os.environ.setdefault("KIVY_NO_CONSOLELOG", "1")
 os.environ.setdefault("KIVY_NO_FILELOG", "1")
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="the fake engine shim is POSIX-only")
+# NOTE: CI covers the screens on-device; here Kivy needs a real GL stack.
 
 # Kivy is an Android-only dependency; the desktop CI installs only requirements.txt.
 pytest.importorskip("kivy", reason="the Android UI needs Kivy (pip install kivy)")

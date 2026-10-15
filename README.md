@@ -98,8 +98,12 @@ Notes:
 - Every release is validated on an emulator: the `android-selftest` job installs
   the APK, pushes a self-test request into the app's own external files dir and
   the app then runs the engine, builds a PSD, analyses it, generates 2K + 4K
-  packages and exports to the gallery, writing `selftest/result.json` back.
-  `adb logcat -s python.stdout:V` shows the same report live.
+  packages, exports to the gallery **and builds the whole Kivy screen tree**
+  (all four screens, both languages, both themes, the home code preview), writing
+  `selftest/result.json` back. `adb logcat -s python.stdout:V` shows the same
+  report live. The screens are checked on the device rather than on the CI runner
+  because Kivy cannot create textures under Xvfb - the same code path runs
+  against a real GLES driver on Android.
 
 ## Build from source
 
@@ -120,8 +124,8 @@ python -m easywalp --preset "My PSD" --desktop a.png --mobile b.png --category O
 
 Everything ships from **one workflow file**
 ([`.github/workflows/easywalp-ci.yml`](.github/workflows/easywalp-ci.yml)):
-every branch push runs the test suite (Linux + Windows, offscreen Qt, the Kivy UI
-under xvfb) and cross-compiles the pinned engine; a tag `v1.2.3` (or
+every branch push runs the test suite (Linux + Windows, offscreen Qt) and
+cross-compiles the pinned engine; a tag `v1.2.3` (or
 **Actions → EasyWalp CI → Run workflow** with the version) builds the pinned
 `photocraft-cli`, the PyInstaller app, the Inno Setup installer *and* the Android
 APK, then publishes `EasyWalp-Setup-1.2.3-windows.zip`,
