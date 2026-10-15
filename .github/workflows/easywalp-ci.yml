@@ -527,26 +527,51 @@ jobs:
           key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v1
           restore-keys: p4a-${{ steps.ver.outputs.safe }}-
 
-      # p4a refuses to build when the SDK does not have the platform the spec asks
-      # for ("Requested API target 35 is not available, install it with the SDK
-      # android tool"), and the runner image does not necessarily ship platform 35.
-      - name: Make sure the SDK has the platform the spec asks for
+      # buildozer hardcodes `$SDK/tools/bin/sdkmanager` (the pre-2019 layout) and
+      # bails out with "sdkmanager is not installed" when it is missing, so the
+      # cmdline-tools copy the runner image ships gets a small shim. Then the SDK
+      # gets whatever buildozer/p4a expect to find: the platform the spec targets
+      # (p4a refuses to build without it) and platform-tools.
+      - name: Make the Android SDK usable by buildozer
         shell: bash
         run: |
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           API=$(grep -E "^android\.api" android/build/app/buildozer.spec | head -1 | tr -dc '0-9')
           echo "spec targets API $API in $SDK"
-          if [ -d "$SDK/platforms/android-$API" ]; then
-            echo "platforms;android-$API is already installed"
-          else
-            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
-            [ -x "$SDKMANAGER" ] || SDKMANAGER=$(command -v sdkmanager)
-            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-            "$SDKMANAGER" "platforms;android-$API" "build-tools;$API.0.0" \
-              || "$SDKMANAGER" "platforms;android-$API"
-            test -d "$SDK/platforms/android-$API" || { echo "::error::platform $API is still missing"; exit 1; }
+
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER=$(command -v sdkmanager || true)
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::no sdkmanager in $SDK"; exit 1
           fi
-          ls "$SDK/platforms"
+          echo "sdkmanager: $SDKMANAGER"
+
+          SHIM="$SDK/tools/bin/sdkmanager"
+          if [ ! -x "$SHIM" ]; then
+            echo "linking $SHIM -> $SDKMANAGER"
+            SUDO=""
+            [ -w "$SDK" ] || SUDO="sudo"
+            $SUDO mkdir -p "$SDK/tools/bin"
+            printf '#!/bin/sh\nexec "%s" "$@"\n' "$SDKMANAGER" | $SUDO tee "$SHIM" > /dev/null
+            $SUDO chmod +x "$SHIM"
+          fi
+          "$SHIM" --version || true
+
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          MISSING=""
+          [ -d "$SDK/platforms/android-$API" ] || MISSING="$MISSING platforms;android-$API"
+          [ -d "$SDK/platform-tools" ] || MISSING="$MISSING platform-tools"
+          if [ -n "$MISSING" ]; then
+            echo "installing:$MISSING"
+            "$SDKMANAGER" $MISSING || { echo "::error::could not install:$MISSING"; exit 1; }
+          else
+            echo "the SDK already has the platform and platform-tools"
+          fi
+          test -d "$SDK/platforms/android-$API" || { echo "::error::platform $API is still missing"; exit 1; }
+
+          echo "--- platforms ---"; ls "$SDK/platforms"
+          echo "--- build-tools ---"; ls "$SDK/build-tools" 2>/dev/null || echo "(none)"
+          echo "--- platform-tools ---"; ls "$SDK/platform-tools" 2>/dev/null | head -5 || echo "(none)"
 
       # p4a resolves every recipe-less dependency with `pip install --dry-run
       # --platform=<android>` and then hands the chosen wheels to the *host* pip,
