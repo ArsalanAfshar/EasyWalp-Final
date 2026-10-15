@@ -153,9 +153,30 @@ def render_spec(dest: Path, version: str, sdk: str | None, ndk: str | None,
         # Pin python-for-android to a checkout (reproducible builds; CI clones the tag).
         extra.append(f"p4a.source_dir = {p4a_dir}")
     if extra:
-        spec = spec.rstrip() + "\n\n# --- filled in by scripts/android/prepare_apk.py ---\n" + "\n".join(extra) + "\n"
+        block = ("# --- filled in by scripts/android/prepare_apk.py ---\n"
+                 + "\n".join(extra) + "\n")
+        # Buildozer reads every one of these with `config.get*('app', …)`, so they
+        # have to sit inside the [app] section. Appended to the end of the file they
+        # land in [buildozer] instead, are silently ignored, and the build falls back
+        # to buildozer's own (empty) SDK/NDK dirs - which is exactly how CI ended up
+        # with "Requested API target 35 is not available".
+        header = re.search(r"(?m)^\[buildozer\]", spec)
+        if header:
+            spec = spec[:header.start()] + block + "\n" + spec[header.start():]
+        else:
+            spec = spec.rstrip() + "\n\n" + block
     target = dest / "buildozer.spec"
     target.write_text(spec, encoding="utf-8")
+
+    # Guard the placement above: a key in the wrong section is invisible to
+    # buildozer and only shows up as a confusing failure minutes into the build.
+    import configparser
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read(target, encoding="utf-8")
+    for line in extra:
+        key = line.split("=", 1)[0].strip()
+        if not parser.has_option("app", key):
+            raise SystemExit(f"error: {key} did not land in the [app] section of {target}")
     return target
 
 
