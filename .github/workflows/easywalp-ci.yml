@@ -527,6 +527,22 @@ jobs:
           key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v1
           restore-keys: p4a-${{ steps.ver.outputs.safe }}-
 
+      # p4a resolves every recipe-less dependency with `pip install --dry-run
+      # --platform=<android>` and then hands the chosen wheels to the *host* pip,
+      # which refuses anything that is not tagged for the running platform. Since
+      # charset-normalizer 3.5.0 it publishes cp3xx-android_24_<abi> wheels, so p4a
+      # picks one and the install dies with "not a supported wheel on this
+      # platform". 3.4.x ships the same pure-python wheel for every platform, and
+      # nothing we ship cares which version it gets.
+      - name: Constrain the wheels p4a cannot install
+        shell: bash
+        run: |
+          cat > "$GITHUB_WORKSPACE/pip-constraints.txt" <<'EOF'
+          charset-normalizer<3.5
+          EOF
+          echo "PIP_CONSTRAINT=$GITHUB_WORKSPACE/pip-constraints.txt" >> "$GITHUB_ENV"
+          cat "$GITHUB_WORKSPACE/pip-constraints.txt"
+
       - name: Build the APK
         id: build
         shell: bash
