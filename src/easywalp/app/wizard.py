@@ -14,8 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -57,6 +55,10 @@ class WizardDialog(QDialog):
         self.candidates: list[wiz.LayerCandidate] = []
         self.thumbs: dict[int, Path] = {}
         self._analyzed = False
+        self._saved = False
+        self._text_full = ""
+        self._text_font = ""
+        self._font_missing: list[str] = []
 
         self.setWindowTitle(i18n.tr("wizard.title"))
         self.resize(720, 560)
@@ -334,13 +336,10 @@ class WizardDialog(QDialog):
             self._save_and_close()
 
     def _cancel(self) -> None:
-        if self.preset is not None:
+        if self.preset is not None and not self._saved:
             # Keep nothing half-built: remove the cloned template unless saved.
-            if not self._saved:
-                self.preset.delete()
+            self.preset.delete()
         self.reject()
-
-    _saved = False
 
     def _sync_buttons(self) -> None:
         i = self.stack.currentIndex()
@@ -519,6 +518,3 @@ class WizardDialog(QDialog):
 
         error_box(self, title, details)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-izeEvent(event)
