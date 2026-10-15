@@ -39,15 +39,15 @@ CloseApplications=yes
 ChangesAssociations=yes
 
 [Languages]
+; Farsi chains after Default.isl: any message our partial file omits falls back to English.
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "farsi"; MessagesFile: "Farsi.isl"
+Name: "farsi"; MessagesFile: "compiler:Default.isl,Farsi.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "Farsi.isl"; DestDir: "{app}\languages"; Flags: skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

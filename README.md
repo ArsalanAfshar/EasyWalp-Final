@@ -85,13 +85,14 @@ python -m easywalp gui             &REM the app
 python -m easywalp --preset "My PSD" --desktop a.png --mobile b.png --category O --number 236 --res 2k --out D:\Out
 ```
 
-Full installer + release build is automated: push a tag `v1.2.3` →
-GitHub Actions builds the pinned `photocraft-cli`, the PyInstaller app and the
-Inno Setup installer, then publishes
-`EasyWalp-Setup-1.2.3-windows.zip` with SHA256 checksums to Releases.
-One-time setup on your own machine (GitHub rejects workflow files pushed by app
-integrations): `python scripts/install_workflows.py`, then commit & push the
-`.github/workflows` folder it creates.
+Full installer + release build is automated with **one workflow file**
+(`ops/workflows/easywalp-ci.yml` — GitHub rejects workflow files pushed by app
+integrations, so install it once via `python scripts/install_workflows.py`, or
+paste it into `.github/workflows/easywalp-ci.yml` on github.com). Then either
+push a tag `v1.2.3` or click **Actions → EasyWalp CI → Run workflow** with the
+version — GitHub Actions builds the pinned `photocraft-cli`, the PyInstaller app
+and the Inno Setup installer, and publishes `EasyWalp-Setup-1.2.3-windows.zip`
+with SHA256 checksums to Releases.
 Step-by-step for non-developers: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 ## Feasibility spike (PhotoCraft proof)

@@ -16,21 +16,31 @@ git remote add origin https://github.com/ArsalanAfshar/<repo>.git
 git push -u origin main
 ```
 
-## One-time: install the CI workflows
+## One-time: install the CI workflow (one file)
 
-The three workflow files ship in `ops/workflows/` because GitHub rejects
-workflow files pushed by some app integrations. In your own clone run once:
+The workflow file ships in `ops/workflows/easywalp-ci.yml` because GitHub
+rejects workflow files pushed by some app integrations. Do ONE of these:
 
+**Option A — on your own machine (recommended):**
 ```bash
 python scripts/install_workflows.py
-git add .github/workflows
-git commit -m "Install CI workflows"
-git push
+git add .github/workflows && git commit -m "Install EasyWalp CI" && git push
 ```
 
-Then open Actions → "PhotoCraft binaries" → Run workflow. It builds the pinned
-PhotoCraft and stages ready binaries on the `photocraft-bin` branch (you can
-download them from the run's artefacts too).
+**Option B — on github.com (no tools needed):** open the repo → **Add file →
+Create new file** → name it `.github/workflows/easywalp-ci.yml` → paste the
+content of `ops/workflows/easywalp-ci.yml` → **Commit changes**.
+(The raw file is at
+`https://github.com/ArsalanAfshar/EasyWalp-Final/blob/main/ops/workflows/easywalp-ci.yml`.)
+
+## Publish a release (Option 1: click "Run workflow" — no tag needed)
+
+1. GitHub → **Actions** tab → **EasyWalp CI** → **Run workflow** →
+   type the version, e.g. `0.1.0` → **Run workflow**.
+2. The pipeline builds the pinned PhotoCraft engine, the app, the installer,
+   creates the `v0.1.0` tag itself and publishes the release when green.
+
+## Publish a release (Option 2: push a v* tag)
 
 ## Publish a release
 
@@ -42,8 +52,7 @@ download them from the run's artefacts too).
    git tag v1.2.3
    git push origin v1.2.3
    ```
-   (Or: GitHub web → Releases → Draft a new release → type `v1.2.3` → publish.)
-4. Watch Actions → **Release**. Three jobs: builds the pinned `photocraft-cli`
+4. Watch **Actions → EasyWalp CI**. It builds the pinned `photocraft-cli`
    (cached Rust build), packages the app with PyInstaller, builds the Inno Setup
    installer, then publishes to Releases:
    - `EasyWalp-Setup-1.2.3-windows.zip` (installer + portable app)
