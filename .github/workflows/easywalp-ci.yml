@@ -524,7 +524,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: android/build/app/.buildozer
-          key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v1
+          key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v2
           restore-keys: p4a-${{ steps.ver.outputs.safe }}-
 
       # buildozer hardcodes `$SDK/tools/bin/sdkmanager` (the pre-2019 layout) and
@@ -588,6 +588,21 @@ jobs:
           EOF
           echo "PIP_CONSTRAINT=$GITHUB_WORKSPACE/pip-constraints.txt" >> "$GITHUB_ENV"
           cat "$GITHUB_WORKSPACE/pip-constraints.txt"
+
+      # p4a creates a venv with the freshly built hostpython and then upgrades pip
+      # inside it. Kept across runs (the build folder is cached) that upgrade leaves
+      # the venv with pip files from two different versions and every later run dies
+      # on `pip install -U pip` with an ImportError from inside pip itself
+      # ("cannot import name 'BuildDependencyInstallError'"). It takes seconds to
+      # create again, so it never gets reused. Same for the target installs, which a
+      # failed run can leave half-written.
+      - name: Drop the python-for-android venv from the cache
+        shell: bash
+        run: |
+          P4A_BUILD=android/build/app/.buildozer/android/platform
+          find "$P4A_BUILD" -maxdepth 4 -type d \( -name venv -o -name python-installs \) -print
+          find "$P4A_BUILD" -maxdepth 4 -type d \( -name venv -o -name python-installs \) -exec rm -rf {} +
+          find "$P4A_BUILD" -maxdepth 4 -type d \( -name venv -o -name python-installs \) -print
 
       - name: Build the APK
         id: build
