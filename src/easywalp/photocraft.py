@@ -86,6 +86,13 @@ class Session:
         self._lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------
+    def __enter__(self) -> "Session":
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
     def start(self) -> None:
         if self._proc and self._proc.poll() is None:
             return
