@@ -177,6 +177,7 @@ class WizardDialog(QDialog):
         lay.addStretch(1)
         for c in (self.so_desktop_combo, self.so_mobile_combo, self.fill_combo, self.text_combo):
             c.currentIndexChanged.connect(self._mapping_changed)
+        self.stack.addWidget(page)
 
     def _add_combo(self, lay: QVBoxLayout, label: str, kind: str) -> QComboBox:
         row = QHBoxLayout()
@@ -284,6 +285,7 @@ class WizardDialog(QDialog):
         self.code_status.setWordWrap(True)
         lay.addWidget(self.code_status)
         lay.addStretch(1)
+        self.stack.addWidget(page)
 
     # ------------------------------------------------------------ page 4
     def _build_page_finish(self) -> None:
@@ -308,6 +310,7 @@ class WizardDialog(QDialog):
         lay.addWidget(self.dry_thumb, 1)
 
         self.dry_btn.clicked.connect(self._dry_run)
+        self.stack.addWidget(page)
 
     # ------------------------------------------------------------ nav
     def _go_back(self) -> None:

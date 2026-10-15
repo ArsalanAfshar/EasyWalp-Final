@@ -21,6 +21,10 @@ from easywalp.photocraft import Session
 from easywalp.pipeline import Pipeline
 from easywalp.presets import LayerRef, Preset, TextCodeInfo
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32", reason="the fake engine shim is a POSIX #!/bin/sh script"
+)
+
 # The fake engine lives in tests/fake_engine.py (shared with the Android tests).
 from fake_engine import FakeBinary, write_fake_engine  # noqa: E402
 

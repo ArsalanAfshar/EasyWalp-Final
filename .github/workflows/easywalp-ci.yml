@@ -93,13 +93,6 @@ jobs:
           python scripts/ci/publish_log.py --file pytest-output.txt \
             --job-name "pytest (${{ matrix.os }})" --title "pytest (${{ matrix.os }})" || true
 
-      - name: Fail if the tests failed
-        if: steps.pytests.outputs.status != '0'
-        shell: bash
-        run: |
-          echo "::error::pytest exited with ${{ steps.pytests.outputs.status }}"
-          exit 1
-
       # The Android/Kivy screens need a real GL context, so they get their own run
       # on a virtual X server with Mesa's software renderer.
       - name: Run the Android UI tests (xvfb + software GL)
@@ -125,6 +118,7 @@ jobs:
         run: |
           python scripts/ci/publish_log.py --file kivy-output.txt \
             --job-name "pytest (${{ matrix.os }})" --title "kivy ui" || true
+
 
       - name: Fail if the tests failed
         if: steps.pytests.outputs.status != '0' || (runner.os == 'Linux' && steps.kivyui.outputs.status != '0')

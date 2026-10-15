@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -232,7 +233,7 @@ class EasyWalpApp(App):
 
         threading.Thread(target=runner, daemon=True).start()
 
-    def progress_callback(self, screen) -> callable:
+    def progress_callback(self, screen) -> Callable[[str, float], None]:
         """A pipeline progress callback that hops onto the UI thread."""
 
         def report(stage: str, fraction: float) -> None:

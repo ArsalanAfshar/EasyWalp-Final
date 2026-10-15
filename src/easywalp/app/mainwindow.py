@@ -171,9 +171,10 @@ class MainWindow(QMainWindow):
         self.result_row = QHBoxLayout()
         self.result_thumb = QLabel()
         self.result_info = QLabel("")
-        self.open_folder_btn = make_button()
-        self.copy_code_btn = make_button()
-        self.open_preview_btn = make_button()
+        # labels are set in _retranslate(); the widgets just have to exist
+        self.open_folder_btn = make_button("")
+        self.copy_code_btn = make_button("")
+        self.open_preview_btn = make_button("")
         self.result_row.addWidget(self.result_thumb)
         res_btns = QVBoxLayout()
         res_btns.addWidget(self.result_info)

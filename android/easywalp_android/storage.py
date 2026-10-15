@@ -107,7 +107,8 @@ class Storage:
                     handle = self._shared.copy_to_shared(str(path), collection="Pictures", filepath=rel)
                 except Exception as e:  # noqa: BLE001
                     log.exception("copy_to_shared failed")
-                    handle, _ = None, errors.append(str(e))
+                    handle = None
+                    errors.append(str(e))
                 if handle:
                     handles.append(str(handle))
                 else:
