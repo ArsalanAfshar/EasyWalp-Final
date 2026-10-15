@@ -20,6 +20,10 @@ on:
         description: "Version to release (e.g. 0.1.0) — used when run manually"
         required: false
         default: ""
+      android_abis:
+        description: "Android ABIs for the APK (arm64-v8a, arm64-v8a,x86, ...)"
+        required: false
+        default: "arm64-v8a"
 
 permissions:
   contents: write    # releases, tags, the photocraft-bin branch
@@ -374,6 +378,180 @@ jobs:
         with:
           name: photocraft-cli-android
           path: engines-android/
+
+  # ------------------------------------------------------------------- apk
+  # Builds the installable Android package: the shared core, the Kivy app, the
+  # bundled fonts/i18n and the cross-compiled engine (as lib/<abi>/libphotocraft_cli.so).
+  apk:
+    name: Build the Android APK
+    needs: [engine-android]
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'branch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Resolve version and ABIs
+        id: ver
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            V="${{ github.ref_name }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ inputs.version }}"
+          else
+            V=""
+          fi
+          V="${V#v}"
+          if [ -z "$V" ]; then
+            V=$(python -c "import sys; sys.path.insert(0, 'src'); from easywalp import __version__; print(__version__)")
+          fi
+          ABIS="${{ inputs.android_abis }}"
+          [ -n "$ABIS" ] || ABIS="arm64-v8a"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "abis=$ABIS" >> "$GITHUB_OUTPUT"
+          echo "safe=$(echo "$ABIS" | tr ',' '-')" >> "$GITHUB_OUTPUT"
+          echo "EasyWalp $V for $ABIS"
+
+      - name: Locate the Android SDK and NDK
+        id: sdk
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
+          if [ ! -d "$NDK" ]; then NDK=$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1); fi
+          if [ ! -d "$SDK" ]; then echo "::error::no Android SDK found on the runner"; exit 1; fi
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then echo "::error::no Android NDK found on the runner"; exit 1; fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "sdk=$SDK" >> "$GITHUB_OUTPUT"
+          echo "ndk=$NDK" >> "$GITHUB_OUTPUT"
+          echo "sdk: $SDK"; echo "ndk: $NDK"
+
+      - name: Download the Android engine
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: photocraft-cli-android
+          path: engines-android
+
+      - name: Install the build tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git zip unzip openjdk-17-jdk-headless autoconf automake libtool pkg-config \
+            zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev libltdl-dev
+          python -m pip install --upgrade pip
+          pip install buildozer "python-for-android==2026.5.9" cython
+          buildozer --version
+
+      - name: Check out python-for-android (pinned tag)
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v2026.05.09 https://github.com/kivy/python-for-android.git ../p4a
+          git -C ../p4a log --oneline -1
+
+      - name: Assemble the build folder
+        shell: bash
+        run: |
+          python scripts/android/prepare_apk.py \
+            --version "${{ steps.ver.outputs.version }}" \
+            --abis "${{ steps.ver.outputs.abis }}" \
+            --engine-dir engines-android \
+            --sdk "${{ steps.sdk.outputs.sdk }}" \
+            --ndk "${{ steps.sdk.outputs.ndk }}" \
+            --p4a-dir "$GITHUB_WORKSPACE/../p4a" \
+            --build-dir android/build/app
+          echo "--- rendered spec (differences from android/buildozer.spec) ---"
+          diff <(sed -n '1,200p' android/buildozer.spec) <(sed -n '1,200p' android/build/app/buildozer.spec) || true
+          echo "--- build folder ---"
+          find android/build/app -maxdepth 2 -not -path '*/__pycache__*' | sort | head -40
+
+      - name: Cache the python-for-android build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: android/build/app/.buildozer
+          key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v1
+          restore-keys: p4a-${{ steps.ver.outputs.safe }}-
+
+      - name: Build the APK
+        id: build
+        shell: bash
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+        run: |
+          set +e
+          (
+            cd android/build/app
+            buildozer -v android debug
+          ) > apk-build.log 2>&1
+          STATUS=$?
+          tail -80 apk-build.log
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the APK build log
+        if: steps.build.outputs.status != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/publish_log.py --file apk-build.log \
+            --job-name "Build the Android APK" --title "apk build" || true
+
+      - name: Fail if the build failed
+        if: steps.build.outputs.status != '0'
+        shell: bash
+        run: exit 1
+
+      - name: Inspect the APK
+        shell: bash
+        run: |
+          ls -l android/build/app/bin/ || true
+          APK=$(ls android/build/app/bin/*.apk | head -1)
+          echo "APK: $APK ($(du -h "$APK" | cut -f1))"
+          unzip -l "$APK" | grep -E "lib/|assets/(fonts|i18n|photocraft)|private" | head -30
+          python - <<'PY'
+          import zipfile, glob
+          apk = glob.glob("android/build/app/bin/*.apk")[0]
+          names = zipfile.ZipFile(apk).namelist()
+          wanted = [n for n in names if "photocraft" in n or n.startswith("lib/arm64-v8a/lib") or "fonts" in n]
+          print("engine + libs:", wanted)
+          assert any("photocraft_cli" in n for n in names), "the engine is missing from the APK"
+          PY
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: easywalp-apk-${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.safe }}
+          path: android/build/app/bin/*.apk
+
+      - name: Attach the APK to the GitHub release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "EasyWalp ${TAG#v}" \
+              --notes "EasyWalp ${TAG#v} - Windows installer and Android APK." || true
+          fi
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$TAG" android/build/app/bin/*.apk --clobber; then exit 0; fi
+            sleep 15
+          done
+          echo "::error::could not attach the APK to $TAG"
+          exit 1
 
   # ------------------------------------------------------------- release
   release-engine:

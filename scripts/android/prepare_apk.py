@@ -34,6 +34,10 @@ CORE_PACKAGE = ROOT / "src" / "easywalp"
 DEFAULT_ABIS = ("arm64-v8a", "x86")
 #: sub-packages of the core that only exist for the desktop GUI
 CORE_SKIP = {"app", "__pycache__"}
+#: ABIs buildozer 1.6 can attach extra native libraries to (`android.add_libs_*`)
+BUILDOZER_ABIS = {"armeabi", "armeabi-v7a", "arm64-v8a", "x86", "mips"}
+LIB_KEY = {"armeabi": "armeabi", "armeabi-v7a": "armeabi_v7a", "arm64-v8a": "arm64_v8a",
+           "x86": "x86", "x86_64": "x86_64", "mips": "mips"}
 LICENCE_FILES = ("LICENSE-MIT", "LICENSE-APACHE", "NOTICE", "ATTRIBUTION.md")
 
 
@@ -118,12 +122,29 @@ def write_version(core_dir: Path, version: str) -> None:
     )
 
 
+def numeric_version(version: str) -> int:
+    """`0.1.0` -> 100, `1.2.3` -> 10203: monotonic enough for Android's versionCode."""
+    parts = [int(p) for p in re.findall(r"\d+", version)[:3]] or [0]
+    while len(parts) < 3:
+        parts.append(0)
+    major, minor, patch = (min(p, 9999) for p in parts)
+    return major * 10000 + minor * 100 + patch
+
+
 def render_spec(dest: Path, version: str, sdk: str | None, ndk: str | None,
-                p4a_dir: str | None) -> Path:
+                p4a_dir: str | None, abis: tuple[str, ...] = ()) -> Path:
     """Copy android/buildozer.spec into the build folder with the values filled in."""
     spec = (ANDROID_DIR / "buildozer.spec").read_text(encoding="utf-8")
     spec = re.sub(r"(?m)^version = .*$", f"version = {version}", spec)
-    extra: list[str] = []
+    if abis:
+        spec = re.sub(r"(?m)^android\.archs = .*$", "android.archs = " + ",".join(abis), spec)
+    extra: list[str] = [f"android.numeric_version = {numeric_version(version)}"]
+    for abi in abis:
+        if abi in BUILDOZER_ABIS:
+            extra.append(f"android.add_libs_{LIB_KEY[abi]} = libs/{abi}/*.so")
+        else:
+            print(f"warning: buildozer cannot attach native libraries for {abi}; "
+                  f"the engine will not be bundled for it", file=sys.stderr)
     if sdk:
         extra.append(f"android.sdk_path = {sdk}")
     if ndk:
@@ -146,7 +167,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-engine", action="store_true",
                         help="build an APK without the engine (UI-only)")
     parser.add_argument("--abis", default=",".join(DEFAULT_ABIS),
-                        help=f"comma-separated ABIs (default: {','.join(DEFAULT_ABIS)})")
+                        help=f"comma-separated ABIs (default: {','.join(DEFAULT_ABIS)}); "
+                             f"buildozer attaches engine libraries for {','.join(sorted(BUILDOZER_ABIS))}")
     parser.add_argument("--sdk", default=None, help="Android SDK path (written into the spec)")
     parser.add_argument("--ndk", default=None, help="Android NDK path (written into the spec)")
     parser.add_argument("--p4a-dir", default=None, help="python-for-android checkout to use")
@@ -166,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
     modules = copy_app_package(dest)
     copy_resources(dest, args.engine_dir)
     write_version(dest, version)
-    spec = render_spec(dest, version, args.sdk, args.ndk, args.p4a_dir)
+    spec = render_spec(dest, version, args.sdk, args.ndk, args.p4a_dir, abis)
 
     placed: list[Path] = []
     if not args.skip_engine:

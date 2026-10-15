@@ -28,6 +28,12 @@ MAX_ANNOTATIONS = 40
 MAX_COMMENT_CHARS = 60_000
 
 
+def warn(message: str) -> None:
+    """A failure of the diagnostics themselves must be visible in the UI too."""
+    print(f"publish_log: {message}", flush=True)
+    print(f"::warning title=publish_log::publish_log: {message}", flush=True)
+
+
 def call(method: str, url: str, token: str, payload: dict | None = None):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(url, data=data, method=method)
@@ -42,15 +48,22 @@ def call(method: str, url: str, token: str, payload: dict | None = None):
     return json.loads(body) if body else {}
 
 
-def find_check_run(repo: str, token: str, run_id: str, job_name: str) -> str | None:
-    """URL of the check run belonging to the failing job (matched by name)."""
-    jobs = call("GET", f"{API}/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100", token)
-    candidates = jobs.get("jobs", [])
-    exact = [j for j in candidates if j.get("name") == job_name]
-    loose = [j for j in candidates if job_name and job_name in (j.get("name") or "")]
-    for job in exact + loose + candidates:
-        if job.get("check_run_url"):
-            return job["check_run_url"]
+def find_check_run_id(repo: str, token: str, sha: str, job_name: str) -> int | None:
+    """The check run of the job called *job_name* (Actions names them like the job).
+
+    The jobs API leaves ``check_run_url`` empty, so the check-run list of the head
+    commit is the reliable lookup.
+    """
+    if not sha:
+        return None
+    runs = call("GET", f"{API}/repos/{repo}/commits/{sha}/check-runs?per_page=100", token)
+    candidates = runs.get("check_runs", [])
+    for run in candidates:
+        if run.get("name") == job_name:
+            return int(run["id"])
+    for run in candidates:
+        if job_name and job_name in (run.get("name") or ""):
+            return int(run["id"])
     return None
 
 
@@ -94,9 +107,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.skip_annotations:
         try:
-            url = find_check_run(args.repo, token, args.run_id, args.job_name)
-            if not url:
-                print("publish_log: no check run found for this job")
+            check_id = find_check_run_id(args.repo, token, args.sha, args.job_name)
+            if not check_id:
+                warn(f"no check run named {args.job_name!r} on {args.sha[:8]}")
             else:
                 pieces = chunk(text, MAX_ANNOTATION_CHARS, MAX_ANNOTATIONS)
                 annotations = [
@@ -110,13 +123,15 @@ def main(argv: list[str] | None = None) -> int:
                     }
                     for i, piece in enumerate(pieces)
                 ]
-                result = call("POST", f"{url}/annotations", token, {"annotations": annotations})
+                result = call("POST", f"{API}/repos/{args.repo}/check-runs/{check_id}/annotations",
+                              token, {"annotations": annotations})
                 print(f"publish_log: posted {len(annotations)} annotation(s) "
-                      f"({len(text)} chars) -> {result.get('html_url', url)}")
+                      f"({len(text)} chars) to check run {check_id}"
+                      f" {result.get('html_url', '')}")
         except urllib.error.HTTPError as e:
-            print(f"publish_log: annotations failed: {e.code} {e.read()[:300]!r}")
+            warn(f"annotations failed: {e.code} {e.read()[:200]!r}")
         except Exception as e:  # noqa: BLE001
-            print(f"publish_log: annotations failed: {type(e).__name__}: {e}")
+            warn(f"annotations failed: {type(e).__name__}: {e}")
 
     if not args.skip_comment and args.sha:
         try:
@@ -127,9 +142,9 @@ def main(argv: list[str] | None = None) -> int:
                           {"body": f"**CI log: {title}**\n\n```\n{body}\n```\n"})
             print(f"publish_log: commit comment -> {result.get('html_url', '?')}")
         except urllib.error.HTTPError as e:
-            print(f"publish_log: commit comment failed: {e.code} {e.read()[:300]!r}")
+            warn(f"commit comment failed: {e.code} {e.read()[:200]!r}")
         except Exception as e:  # noqa: BLE001
-            print(f"publish_log: commit comment failed: {type(e).__name__}: {e}")
+            warn(f"commit comment failed: {type(e).__name__}: {e}")
 
     return 0
 

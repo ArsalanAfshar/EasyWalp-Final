@@ -51,7 +51,8 @@ android.api = 35
 android.minapi = 24
 android.ndk_api = 24
 # arm64-v8a: every current phone. x86: the emulator CI runs the on-device self-test with.
-android.archs = arm64-v8a, x86
+# Overridden by scripts/android/prepare_apk.py --abis (the engine libs must match).
+android.archs = arm64-v8a
 android.accept_sdk_license = True
 android.private_storage = True
 android.allow_backup = True
@@ -60,8 +61,9 @@ android.allow_backup = True
 # libraries with the executable bit set, while files in the app's data directory
 # cannot be executed at all (Android 10+). `easywalp.photocraft` looks for
 # `libphotocraft_cli.so` inside ApplicationInfo.nativeLibraryDir.
-android.add_libs_arm64_v8a = libs/arm64-v8a/*.so
-android.add_libs_x86 = libs/x86/*.so
+#
+# `android.add_libs_<abi>` lines are written by scripts/android/prepare_apk.py, one
+# per ABI in --abis, so the APK only contains engine binaries that exist.
 
 [buildozer]
 log_level = 2
