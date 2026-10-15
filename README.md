@@ -70,9 +70,11 @@ file is infected. Options:
 
 ## Build from source
 
-Requirements: Windows 10/11, Python 3.11+, and a `photocraft-cli.exe` (built
-from the commit pinned in `config/photocraft-pin.json`, or grabbed from the
-"PhotoCraft binaries" workflow run of this repo).
+Requirements: Windows 10/11, Python 3.11+, and a `photocraft-cli.exe` built
+from the commit pinned in `config/photocraft-pin.json`. Easiest: run the
+**"PhotoCraft binaries"** workflow once (after `python scripts/install_workflows.py`),
+then `python scripts/fetch_engine.py` puts it into `%APPDATA%\EasyWalp\engines\`
+where both the app and the spike scripts find it.
 
 ```bat
 py -3.11 -m venv .venv && .venv\Scripts\activate
