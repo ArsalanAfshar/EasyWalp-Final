@@ -462,21 +462,11 @@ jobs:
           if [ -z "$V" ]; then
             V=$(python -c "import sys; sys.path.insert(0, 'src'); from easywalp import __version__; print(__version__)")
           fi
-          # Tags build what the release page advertises: real phones (arm64-v8a).
-          # Branch runs add x86 so the on-device self-test has an APK the emulator
-          # can actually run - the two ABIs end up in one APK, and the emulator
-          # installs the x86 half of it.
+          # arm64-v8a is what the release page advertises and what phones run. A
+          # manual run can ask for x86 as well - that is the APK the Android emulator
+          # in "On-device self-test" can actually install.
           ABIS="${{ inputs.android_abis }}"
-          if [ -z "$ABIS" ]; then
-            if [ "${{ github.ref_type }}" = "branch" ]; then
-              ABIS="arm64-v8a,x86"
-            else
-              ABIS="arm64-v8a"
-            fi
-          fi
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "abis=$ABIS" >> "$GITHUB_OUTPUT"
-          echo "safe=$(echo "$ABIS" | tr ',' '-')" >> "$GITHUB_OUTPUT"
+          [ -n "$ABIS" ] || ABIS="arm64-v8a"
           echo "EasyWalp $V for $ABIS"
 
       - name: Locate the Android SDK and NDK
@@ -751,10 +741,9 @@ jobs:
   android-selftest:
     name: On-device self-test (Android emulator)
     needs: [apk]
-    # Branch runs always carry an x86 APK (see "Resolve version and ABIs"), so the
-    # self-test does not need a manual dispatch any more. Tag runs ship arm64 only
-    # and skip it.
-    if: (github.event_name == 'workflow_dispatch' && inputs.android_emulator) || (github.event_name == 'push' && github.ref_type == 'branch')
+    # Needs an x86 ABI in the APK (set *android_abis* to x86 or arm64-v8a,x86 when
+    # dispatching) - an arm64-only APK cannot run on the emulator.
+    if: github.event_name == 'workflow_dispatch' && inputs.android_emulator
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:

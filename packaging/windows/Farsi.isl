@@ -25,7 +25,10 @@ ButtonYesToAll=بله به همه
 ButtonNo=خیر
 ButtonNoToAll=خیر به هیچ‌کدام
 ButtonFinish=پایان
-ButtonBrowse...=مرور...
+; the key has to be Inno's ButtonBrowse - the dots belong in the value, and a
+; key containing a '.' makes ISCC stop with 'A language name may not be specified
+; in a messages file'
+ButtonBrowse=مرور...
 ButtonWizardBrowse=مرور...
 ButtonNewFolder=پوشه جدید
 ; Wizard pages
@@ -35,7 +38,8 @@ WelcomeLabel2=این برنامه EasyWalp را روی رایانه شما نص�
 SelectDirDesc=کجا نصب شود؟
 SelectDirLabel3=نصب، EasyWalp را در پوشه زیر قرار می‌دهد.
 SelectDirBrowseLabel=برای ادامه، روی «بعدی» کلیک کنید. اگر پوشه دیگری می‌خواهید، روی «مرور...» کلیک کنید.
-SelectProgramGroupDesc=پوشه منوی شروع
+; no message by this name in Inno 6.7 (it is WizardSelectProgramGroup); left out:
+; SelectProgramGroupDesc=پوشه منوی شروع
 SelectTasksDesc=کارهای اضافی
 ReadyLabel1=برای نصب آماده‌اید.
 InstallingLabel=لطفاً صبر کنید، در حال نصب EasyWalp...
@@ -45,8 +49,8 @@ FinishedLabel=EasyWalp روی رایانه شما نصب شد.[nl][nl]برای �
 ExitSetupTitle=خروج از نصب
 ExitSetupMessage=نصب کامل نشده است. اگر همین حالا خارج شوید، برنامه نصب نخواهد شد.[nl][nl]می‌توانید بعداً دوباره نصب را اجرا کنید.[nl][nl]خروج از نصب؟
 ; Standard messages
-NextButtonCaption=&بعدی
-InstallButtonCaption=&نصب
-UninstallAppName=%1 را حذف کنید
+; dropped NextButtonCaption=&بعدی  (not an Inno message name)
+; dropped InstallButtonCaption=&نصب  (not an Inno message name)
+; dropped UninstallAppName=%1 را حذف کنید  (not an Inno message name)
 UninstallAppFullTitle=حذف %1
 UninstallStatusLabel=لطفاً صبر کنید، در حال حذف EasyWalp...

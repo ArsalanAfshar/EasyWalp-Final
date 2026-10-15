@@ -38,8 +38,7 @@ it like any other file.
    Optional: set *android_abis* to `arm64-v8a,x86` (or `x86`) and tick
    *android_emulator* to also install the APK on an emulator and run the
    on-device self-test (engine, PSD analysis, 2K/4K generation, gallery export).
-   A plain branch push already does that: it builds `arm64-v8a,x86` and runs the
-   self-test on an x86 emulator on its own.
+   The self-test needs the x86 ABI: an arm64-only APK cannot run on the emulator.
 2. The pipeline builds the pinned PhotoCraft engine, the app, the installer,
    creates the `v0.1.0` tag itself and publishes the release when green.
 
