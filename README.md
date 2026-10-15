@@ -1,0 +1,180 @@
+# EasyWalp
+
+**Wallpaper release automation for the Wallify channel** (https://t.me/WallifyChannel)
+
+EasyWalp turns two wallpapers (desktop 16:9 + mobile 9:16) into a ready-to-post
+package: correctly resized JPGs, a release code like `MD-O-C236`, and the
+**preview mockup rendered by the open-source [PhotoCraft](https://github.com/storytold/photocraft)
+engine** — your Photoshop template with the wallpapers placed on the iMac/iPhone
+and the code text updated. No Photoshop needed at release time.
+
+> The preview render is always done by `photocraft-cli` (MIT OR Apache-2.0).
+> Pillow is used **only** for resizing wallpapers, the average color and UI
+> thumbnails. *Powered by PhotoCraft engine.*
+
+---
+
+## What a Generate run does
+
+1. **Resize** both wallpapers to the selected resolution with cover-crop
+   (scale-to-fill + center crop, never stretched or letterboxed), Lanczos,
+   JPG quality 95, 4:4:4, sRGB:
+   | Mode | Desktop | Mobile |
+   |---|---|---|
+   | 2K (default) | 2560×1440 | 1440×2560 |
+   | 4K | 4096×2304 | 2304×4096 |
+2. **Average color** from the desktop wallpaper (≈256px downscale, mean RGB).
+3. **Edit a temp copy of your PSD via PhotoCraft**: replace the desktop and
+   mobile Smart Object contents, set the Solid Color fill layer to the average
+   color, and replace **only the code substring** inside the text layer
+   (`Code:MD-O-C236` → new code; font, size, tracking and position untouched).
+   The mockup always uses the Smart Objects' stored contents size, so 2K and 4K
+   produce the *identical* preview at the PSD's own size.
+4. **Export**: `MD-O-C236\` containing
+   `D-O-C236.jpg`, `M-O-C236.jpg`, `MD-O-C236-preview.jpg`.
+
+Optional per-preset **"Add resolution suffix"** produces `MD-O-C236-4K\`,
+`D-O-C236-4K.jpg`, … (the code on the mockup never changes). All code and file
+name templates are editable in the preset.
+
+## Install (for the channel team)
+
+1. Download `EasyWalp-Setup-x.y.z-windows.zip` from
+   [Releases](../../releases), unzip, run `EasyWalp-Setup-x.y.z.exe`.
+   Per-user install (no admin needed), Start-Menu + optional desktop shortcut.
+2. First start opens the **setup wizard**: pick your PSD, click the suggested
+   layers (the wizard shows a thumbnail of every layer), confirm the detected
+   code, run the built-in test render, save the preset.
+3. Send the created `.easywalp` file (Preset manager → Export) to your
+   colleagues — they just double-click it. No re-mapping.
+
+### ⚠️ Windows SmartScreen / antivirus warning (unsigned installer)
+
+The installer is **not code-signed**, so Windows Defender SmartScreen may show
+*"Windows protected your PC"* and some antivirus products may heuristically
+flag it. This is expected for unsigned open-source apps and does not mean the
+file is infected. Options:
+
+- **Verify the download**: check the SHA256 in `SHA256SUMS.txt` against the
+  file you downloaded (`certutil -hashfile EasyWalp-Setup-x.y.z.exe SHA256`).
+- Click **More info → Run anyway** if you trust the release (built by this
+  repo's GitHub Actions from public sources).
+- Long-term fixes, in rough order of effort:
+  1. **SignPath.io free code signing for open source** (apply with the GitHub
+     repo; the certificate removes SmartScreen warnings as reputation builds).
+  2. Buy an **OV code-signing certificate** (~$100–300/yr) or an **EV
+     certificate** (instant SmartScreen reputation, ~$300–500/yr) and add the
+     signing step to `.github/workflows/release.yml`.
+  3. Submit a false-positive report to Microsoft/VirusTotal if a scanner
+     wrongly flags the file.
+
+## Build from source
+
+Requirements: Windows 10/11, Python 3.11+, and a `photocraft-cli.exe` (built
+from the commit pinned in `config/photocraft-pin.json`, or grabbed from the
+"PhotoCraft binaries" workflow run of this repo).
+
+```bat
+py -3.11 -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt
+set PATH=%CD%\engines;%PATH%      &REM folder containing photocraft-cli.exe
+pytest -q                          &REM tests
+python -m easywalp gui             &REM the app
+python -m easywalp --preset "My PSD" --desktop a.png --mobile b.png --category O --number 236 --res 2k --out D:\Out
+```
+
+Full installer + release build is automated: push a tag `v1.2.3` →
+GitHub Actions builds the pinned `photocraft-cli`, the PyInstaller app and the
+Inno Setup installer, then publishes
+`EasyWalp-Setup-1.2.3-windows.zip` with SHA256 checksums to Releases.
+Step-by-step for non-developers: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
+
+## Feasibility spike (PhotoCraft proof)
+
+`scripts/spike/run_spike.py` runs the whole pipeline through the real engine on
+your PSD (or a synthetic one made by `scripts/spike/make_test_psd.py`) and
+writes `spike-report.md`: pixel diffs vs the unmodified render (only the two
+screens, the color fill and the code text may change), layer-id stability across
+save, 2K vs 4K preview identity, timings and engine memory. See
+[docs/SPIKE.md](docs/SPIKE.md).
+
+## Project layout
+
+```
+src/easywalp/        core pipeline (GUI-free) + PySide6 app in app/
+i18n/                en.json / fa.json  (runtime-switchable, RTL)
+assets/              logo, icons, fonts (Vazirmatn, OFL), PhotoCraft licenses
+packaging/windows/   PyInstaller spec + Inno Setup script (+ Farsi.isl)
+scripts/             icon generation, spike, release helpers
+tests/               pytest suite
+config/              photocraft-pin.json (exact engine commit, reproducible builds)
+```
+
+## Third-party / licensing
+
+- EasyWalp: MIT (see `LICENSE`).
+- [PhotoCraft](https://github.com/storytold/photocraft): MIT OR Apache-2.0 —
+  licenses and NOTICE ship in `assets/photocraft/` and inside the app
+  (About → Licenses). PhotoCraft/ArtCraft names and logos are their trademarks;
+  this project uses neither, only the code via its CLI.
+- [Vazirmatn font](https://github.com/rastikerdar/vazirmatn): SIL OFL 1.1.
+
+---
+
+# راهنمای فارسی
+
+**EasyWalp** تولید خودکار پکیج والپیپر برای کانال والیفای است: دو والپیپر
+(دسکتاپ ۱۶:۹ و موبایل ۹:۱۶) + یک تصویر پیش‌نمایش ماکاپ که با موتور متن‌باز
+**PhotoCraft** روی قالب فتوشاپ شما رندر می‌شود — بدون نیاز به فتوشاپ هنگام انتشار.
+
+## کارهایی که Generate انجام می‌دهد
+
+1. تغییر اندازه هر دو تصویر به رزولوشن انتخابی (برش Cover، بدون کشیدگی) با
+   کیفیت JPG ۹۵ و بدون کاهش رنگ (4:4:4):
+   | حالت | دسکتاپ | موبایل |
+   |---|---|---|
+   | 2K (پیش‌فرض) | 2560×1440 | 1440×2560 |
+   | 4K | 4096×2304 | 2304×4096 |
+2. محاسبه **رنگ میانگین** از والپیپر دسکتاپ (قابل تغییر به موبایل یا دستی).
+3. ویرایش نسخه موقت PSD با موتور PhotoCraft: جایگزینی محتوای دو اسمارت‌آبجکت،
+   تنظیم رنگ لایه Solid Color و تغییر **فقط بخش کدِ متن** (`Code:MD-O-C236`) —
+   فونت، اندازه، رنگ و جای متن دست‌نخورده می‌ماند. پیش‌نمایش همیشه در اندازه
+   خود PSD و یکسان برای 2K و 4K است.
+4. ساخت پوشه خروجی مثل `MD-O-C236\` با فایل‌های `D-O-C236.jpg`،
+   `M-O-C236.jpg` و `MD-O-C236-preview.jpg`.
+
+گزینه اختیاری پسوند رزولوشن خروجی را `MD-O-C236-4K` و `D-O-C236-4K.jpg` می‌کند.
+
+## نصب
+
+۱. از بخش [Releases](../../releases) فایل `EasyWalp-Setup-x.y.z-windows.zip`
+   را بگیرید، از حالت فشرده خارج کنید و نصاب را اجرا کنید (بدون نیاز به ادمین).
+۲. در اولین اجرا، **راه‌انداز** باز می‌شود: فایل PSD را بدهید، لایه‌ها را با
+   کمک تصویر کوچک هر لایه انتخاب کنید، کد شناسایی‌شده را تأیید کنید، رندر
+   آزمایشی را ببینید و پریست را ذخیره کنید.
+۳. پریست را با «Export» به فایل `.easywalp` تبدیل کنید و برای همکاران بفرستید —
+   کافی است دابل‌کلیک کنند.
+
+### ⚠️ هشدار SmartScreen ویندوز (نصب بدون امضای دیجیتال)
+
+نصاب امضای دیجیتال ندارد؛ ممکن است ویندوز پیام «Windows protected your PC»
+نشان دهد. این برای برنامه‌های متن‌باز بدون امضا طبیعی است. هش فایل را با
+`SHA256SUMS.txt` بررسی کنید یا «More info → Run anyway» را بزنید. راه‌حل
+بلندمدت: ثبت‌نام رایگان در **SignPath.io** برای پروژه‌های متن‌باز یا خرید
+گواهی امضا (توضیح کامل در بخش انگلیسی).
+
+## ساخت از سورس
+
+نیازمندی: ویندوز ۱۰/۱۱، پایتون ۳٫۱۱+ و فایل `photocraft-cli.exe` طبق نسخه
+ثبت‌شده در `config/photocraft-pin.json`:
+
+```bat
+py -3.11 -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt
+set PATH=%CD%\engines;%PATH%
+pytest -q
+python -m easywalp gui
+```
+
+برای انتشار نسخه جدید فقط یک تگ بزنید (مثل `v1.2.3`)؛ GitHub Actions همه‌چیز را
+می‌سازد و در Releases می‌گذارد. مراحل دقیق: `docs/RELEASE-CHECKLIST.md`.

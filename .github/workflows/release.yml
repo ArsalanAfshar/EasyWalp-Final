@@ -1,0 +1,208 @@
+# EasyWalp release: tag v* -> photocraft-cli (pinned commit) + PyInstaller app
+# + Inno Setup installer -> GitHub Release with SHA256 checksums.
+#
+# Reproducibility: the PhotoCraft commit comes from config/photocraft-pin.json;
+# the Rust build is cached. The binary is never committed to the repository.
+#
+# Release notes: generated from commits since the previous tag; the version comes
+# from the tag itself (single source of truth) and is stamped into the app.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  build-engine:
+    name: Build photocraft-cli (pinned)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Read PhotoCraft pin
+        id: pin
+        shell: bash
+        run: |
+          node -e '
+            const pin = JSON.parse(require("fs").readFileSync("config/photocraft-pin.json","utf8")).photocraft;
+            const fs = require("fs");
+            for (const [k, v] of Object.entries({repo: pin.repo, commit: pin.commit, tag: pin.tag, fonts_repo: pin.craft_fonts_repo, fonts_ref: pin.craft_fonts_ref}))
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, k + "=" + v + "\n");
+          '
+
+      - name: Install Rust (stable, MSVC)
+        shell: bash
+        run: |
+          curl -sSf https://win.rustup.rs/x86_64 -o rustup-init.exe
+          ./rustup-init.exe -y --default-toolchain stable --profile minimal
+          echo "$USERPROFILE/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Check out PhotoCraft (pinned) and craft-fonts (pinned)
+        shell: bash
+        run: |
+          git clone --no-checkout "https://github.com/${{ steps.pin.outputs.repo }}.git" ../photocraft-src
+          git -C ../photocraft-src checkout --detach ${{ steps.pin.outputs.commit }}
+          git clone "https://github.com/${{ steps.pin.outputs.fonts_repo }}.git" ../craft-fonts
+          git -C ../craft-fonts checkout --detach ${{ steps.pin.outputs.fonts_ref }}
+
+      - name: Cache Rust build (keyed by the pin)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ..\photocraft-src\target
+          key: photocraft-${{ steps.pin.outputs.commit }}-${{ runner.os }}
+          restore-keys: photocraft-${{ runner.os }}
+
+      - name: Build photocraft-cli
+        shell: bash
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/../craft-fonts
+        run: |
+          cd ../photocraft-src
+          cargo build --release --locked -p photocraft-cli
+          cp target/release/photocraft-cli.exe "$GITHUB_WORKSPACE/photocraft-cli.exe"
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./photocraft-cli.exe --version
+          ./photocraft-cli.exe commands --json --filter replaceContents | head -5
+
+      - name: Upload engine artefact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: photocraft-cli
+          path: |
+            photocraft-cli.exe
+            ../photocraft-src/LICENSE-MIT
+            ../photocraft-src/LICENSE-APACHE
+            ../photocraft-src/NOTICE
+            ../photocraft-src/ATTRIBUTION.md
+
+  build-app:
+    name: Build app + installer
+    runs-on: windows-latest
+    needs: build-engine
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Derive version from tag
+        id: ver
+        shell: bash
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.16.0
+
+      - name: Download photocraft-cli
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: photocraft-cli
+          path: build-staging
+
+      - name: Stage payload (assets, i18n, licenses, engine)
+        shell: pwsh
+        run: python scripts/release/stage_payload.py `
+              --version ${{ steps.ver.outputs.version }} `
+              --engine-dir build-staging `
+              --dest build/payload
+
+      - name: Build with PyInstaller (onedir)
+        shell: pwsh
+        run: >
+          pyinstaller --noconfirm --clean packaging/windows/easywalp.spec
+
+      - name: Verify the exe starts (offscreen smoke)
+        shell: pwsh
+        run: |
+          $exe = "dist/EasyWalp/EasyWalp.exe"
+          if (-not (Test-Path $exe)) { throw "missing $exe" }
+          # CLI path check only: the GUI would open a window; --version exits 0.
+          & $exe --version
+
+      - name: Build Inno Setup installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1).FullName }
+          & $iscc /DAppVersion=${{ steps.ver.outputs.version }} /DSourceDir="$PWD\dist\EasyWalp" packaging/windows/easywalp.iss
+
+      - name: Checksums + zip
+        shell: pwsh
+        run: python scripts/release/package_release.py `
+              --version ${{ steps.ver.outputs.version }} `
+              --installer "installer-out/EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" `
+              --dist dist/EasyWalp
+
+      - name: Upload release artefacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ steps.ver.outputs.version }}
+          path: |
+            release/EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe
+            release/EasyWalp-Setup-${{ steps.ver.outputs.version }}-windows.zip
+            release/SHA256SUMS.txt
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: build-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download artefacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: release
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          git fetch --tags --quiet
+          NOTES=$(git log --pretty=format:"- %s (%h)" -30 "$GITHUB_REF_NAME" 2>/dev/null | head -40 || true)
+          [ -n "$NOTES" ] || NOTES="- automated release $GITHUB_REF_NAME"
+          {
+            echo "## EasyWalp ${GITHUB_REF_NAME}"
+            echo
+            echo "$NOTES"
+            echo
+            echo "Download \`EasyWalp-Setup-${GITHUB_REF_NAME#v}-windows.zip\`, unzip, run the installer."
+            echo "Verify with \`SHA256SUMS.txt\`. The installer is unsigned - see the README's SmartScreen note."
+            echo
+            echo "Powered by PhotoCraft engine (MIT OR Apache-2.0)."
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            "release/EasyWalp-Setup-${GITHUB_REF_NAME#v}-windows.zip" \
+            "release/EasyWalp-Setup-${GITHUB_REF_NAME#v}.exe" \
+            "release/SHA256SUMS.txt" \
+            --title "EasyWalp ${GITHUB_REF_NAME}" \
+            --notes-file notes.md

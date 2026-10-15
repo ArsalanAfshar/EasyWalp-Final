@@ -1,0 +1,166 @@
+# Builds the pinned PhotoCraft headless CLI (photocraft-cli) for Windows x64 and Linux x86_64.
+#
+# Why: EasyWalp must never commit the compiled PhotoCraft binary (see README › Third-party).
+# CI builds it from the exact commit pinned in config/photocraft-pin.json. The artefacts are
+# uploaded to the workflow run and also staged on the `photocraft-bin` branch so developers and
+# the spike scripts can fetch a ready binary without installing Rust.
+#
+# Run it from the Actions tab ("PhotoCraft binaries" › Run workflow) or when this file or the
+# pin config changes. The release workflow does NOT use this branch: it rebuilds PhotoCraft
+# from source itself, so releases are always reproducible from the pin.
+
+name: PhotoCraft binaries
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - ".github/workflows/photocraft-binaries.yml"
+      - "config/photocraft-pin.json"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: photocraft-binaries
+  cancel-in-progress: false
+
+env:
+  BIN_BRANCH: photocraft-bin
+
+jobs:
+  build:
+    name: photocraft-cli (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            binary: photocraft-cli
+          - os: windows-latest
+            platform: windows-x64
+            binary: photocraft-cli.exe
+
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Read PhotoCraft pin
+        id: pin
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const pin = JSON.parse(fs.readFileSync("config/photocraft-pin.json", "utf8")).photocraft;
+            for (const [k, v] of Object.entries({ repo: pin.repo, commit: pin.commit, tag: pin.tag, fonts_repo: pin.craft_fonts_repo, fonts_ref: pin.craft_fonts_ref })) {
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${v}\n`);
+            }
+          '
+          echo "Pinning ${{ steps.pin.outputs.repo }} @ ${{ steps.pin.outputs.tag }} (${{ steps.pin.outputs.commit }})"
+
+      - name: Install Linux GUI/font dev packages
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libgtk-3-dev
+
+      - name: Check out craft-fonts (pinned)
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "" "https://github.com/${{ steps.pin.outputs.fonts_repo }}.git" ../craft-fonts || \
+            git clone "https://github.com/${{ steps.pin.outputs.fonts_repo }}.git" ../craft-fonts
+          git -C ../craft-fonts checkout --detach ${{ steps.pin.outputs.fonts_ref }}
+
+      - name: Build photocraft-cli (release)
+        shell: bash
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/../craft-fonts
+        run: |
+          git clone --no-checkout "https://github.com/${{ steps.pin.outputs.repo }}.git" ../photocraft-src
+          git -C ../photocraft-src checkout --detach ${{ steps.pin.outputs.commit }}
+          cd ../photocraft-src
+          cargo build --release --locked -p photocraft-cli
+          cp "target/release/${{ matrix.binary }}" "$GITHUB_WORKSPACE/${{ matrix.binary }}"
+
+      - name: Smoke test the binary
+        shell: bash
+        run: |
+          "./${{ matrix.binary }}" --version
+          "./${{ matrix.binary }}" commands --json --filter replaceContents | head -40
+
+      - name: Collect artefacts
+        shell: bash
+        run: |
+          mkdir -p "dist/photocraft-${{ steps.pin.outputs.tag }}-${{ matrix.platform }}"
+          cp "${{ matrix.binary }}" "dist/photocraft-${{ steps.pin.outputs.tag }}-${{ matrix.platform }}/"
+          cp ../photocraft-src/LICENSE-MIT dist/ 2>/dev/null || true
+          cp ../photocraft-src/LICENSE-APACHE dist/ 2>/dev/null || true
+          cp ../photocraft-src/NOTICE dist/ 2>/dev/null || true
+          ( cd dist && sha256sum "photocraft-${{ steps.pin.outputs.tag }}-${{ matrix.platform }}/${{ matrix.binary }}" > "photocraft-cli-${{ matrix.platform }}.sha256" )
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: photocraft-cli-${{ steps.pin.outputs.tag }}-${{ matrix.platform }}
+          path: dist/photocraft-${{ steps.pin.outputs.tag }}-${{ matrix.platform }}/
+
+  stage:
+    name: Stage binaries on ${{ env.BIN_BRANCH }} branch
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Fetch artefacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          run_id=${{ github.run_id }}
+          mkdir -p staged
+          for asset in $(gh api "repos/${{ github.repository }}/actions/runs/$run_id/artifacts" --jq '.artifacts[] | select(.expired == false) | .archive_download_url'); do
+            name=$(basename "$asset")
+            gh api "$asset" > "$name.zip"
+            unzip -o -q "$name.zip" -d staged/
+            rm "$name.zip"
+          done
+          ls -laR staged/
+
+      - name: Push to staging branch
+        shell: bash
+        run: |
+          PIN=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("config/photocraft-pin.json","utf8")).photocraft.tag)')
+          git config user.name "easywalp-ci"
+          git config user.email "actions@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git fetch origin $BIN_BRANCH || true
+          if git ls-remote --exit-code origin "refs/heads/$BIN_BRANCH" >/dev/null 2>&1; then
+            git checkout -B $BIN_BRANCH origin/$BIN_BRANCH
+          else
+            git checkout --orphan $BIN_BRANCH
+            git rm -rf --quiet . || true
+          fi
+          rm -rf binaries
+          mkdir -p binaries
+          cp -a staged/. binaries/
+          cat > binaries/BUILD-INFO.md <<EOF
+          # EasyWalp PhotoCraft binary staging
+
+          Auto-generated by the "PhotoCraft binaries" workflow — **do not edit, do not commit to main.**
+
+          - Source: storytold/photocraft
+          - Tag: $PIN (see config/photocraft-pin.json on main for the exact commit)
+          - Built: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          - Licenses: LICENSE-MIT, LICENSE-APACHE, NOTICE (redistributable under either license)
+
+          This branch exists only so collaborators (and scripts/spike) can fetch a ready-made
+          photocraft-cli without installing Rust. Delete it any time; the workflow recreates it.
+          EOF
+          git add -A binaries
+          git commit -m "Stage photocraft-cli $PIN binaries [skip ci]" || echo "nothing to commit"
+          git push --force origin $BIN_BRANCH

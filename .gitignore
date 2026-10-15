@@ -5,6 +5,9 @@
 google_drive/
 _private/
 samples/
+spike-out/
+engines/
+*.easywalp
 
 # Python
 __pycache__/
@@ -15,19 +18,19 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# PyInstaller / packaging outputs
 build/
 dist/
-*.spec.bak
+installer-out/
+release/
+src/easywalp/_build_version.py
 
-# PyInstaller
-easywalp-build/
-easywalp-dist/
-
-# PhotoCraft build/cache artefacts (built in CI, never committed)
+# Rust/PhotoCraft build artefacts (built in CI from the pinned commit, never committed)
 photocraft/
-photocraft-bin/
-target/
+photocraft-src/
 third_party/photocraft/
+target/
 
 # OS / editor
 .DS_Store
