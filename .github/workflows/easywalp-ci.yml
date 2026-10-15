@@ -518,6 +518,33 @@ jobs:
           git clone --depth 1 --branch v2026.05.09 https://github.com/kivy/python-for-android.git ../p4a
           git -C ../p4a log --oneline -1
 
+      # install_python_modules() creates a venv and upgrades pip inside it, and a
+      # multi-ABI build runs that function once per ABI in the same build folder:
+      # the second `python -m venv venv` runs over the venv the first one upgraded,
+      # leaving pip with files from two versions - every later `pip install -U pip`
+      # then dies with an ImportError raised from inside pip itself. This is what
+      # killed the arm64-v8a+x86 build (and any build whose venv came out of the
+      # cache). Nothing needs that venv to survive between ABIs, so p4a rebuilds it.
+      - name: Patch python-for-android (a fresh venv per ABI)
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("../p4a/pythonforandroid/build.py")
+          text = path.read_text(encoding="utf-8")
+          old = "        shprint(host_python, '-m', 'venv', 'venv')"
+          new = (
+              "        # EasyWalp: recreate the venv instead of reusing it. This function\n"
+              "        # runs once per ABI in the same build directory and `python -m venv`\n"
+              "        # over the venv it already upgraded leaves pip half-upgraded.\n"
+              "        shutil.rmtree('venv', ignore_errors=True)\n"
+          ) + old
+          assert text.count(old) == 1, "p4a's build.py changed - the patch needs a look"
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          print("patched", path)
+          PY
+          grep -n -B 1 -A 2 "recreate the venv" ../p4a/pythonforandroid/build.py
+
       - name: Assemble the build folder
         shell: bash
         run: |

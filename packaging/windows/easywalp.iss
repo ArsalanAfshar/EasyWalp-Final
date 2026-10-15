@@ -29,7 +29,8 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\installer-out
 OutputBaseFilename=EasyWalp-Setup-{#AppVersion}
-SetupIconFile=..\assets\icons\easywalp.ico
+; relative paths in an .iss file resolve from this file's folder (packaging/windows)
+SetupIconFile=..\..\assets\icons\easywalp.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/max
 SolidCompression=yes
