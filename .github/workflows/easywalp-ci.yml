@@ -462,11 +462,20 @@ jobs:
           if [ -z "$V" ]; then
             V=$(python -c "import sys; sys.path.insert(0, 'src'); from easywalp import __version__; print(__version__)")
           fi
-          # arm64-v8a is what the release page advertises and what phones run. A
-          # manual run can ask for x86 as well - that is the APK the Android emulator
-          # in "On-device self-test" can actually install.
+          # arm64-v8a is what the release page advertises and what phones run, so
+          # tag builds ship it. A branch push builds x86 instead: that is the APK the
+          # emulator in "On-device self-test" can install, and it is how the app is
+          # actually exercised on Android before a tag is pushed. Two ABIs in one APK
+          # do not survive gradle's :packageDebug, which is why it is a choice and not
+          # a list. A manual run can ask for either.
           ABIS="${{ inputs.android_abis }}"
-          [ -n "$ABIS" ] || ABIS="arm64-v8a"
+          if [ -z "$ABIS" ]; then
+            if [ "${{ github.ref_type }}" = "branch" ]; then
+              ABIS="x86"
+            else
+              ABIS="arm64-v8a"
+            fi
+          fi
           echo "EasyWalp $V for $ABIS"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "abis=$ABIS" >> "$GITHUB_OUTPUT"
@@ -744,9 +753,9 @@ jobs:
   android-selftest:
     name: On-device self-test (Android emulator)
     needs: [apk]
-    # Needs an x86 ABI in the APK (set *android_abis* to x86 or arm64-v8a,x86 when
-    # dispatching) - an arm64-only APK cannot run on the emulator.
-    if: github.event_name == 'workflow_dispatch' && inputs.android_emulator
+    # Needs an x86 ABI in the APK: branch pushes build one for exactly this job, and
+    # a manual run has to ask for it (android_abis: x86, android_emulator: true).
+    if: (github.event_name == 'workflow_dispatch' && inputs.android_emulator) || (github.event_name == 'push' && github.ref_type == 'branch')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
