@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..i18n import i18n
 from ..photocraft import PhotoCraftBinary, PhotoCraftError
+from .. import presets as presets_mod
 from ..presets import (
     LayerRef,
     Preset,
@@ -159,7 +160,10 @@ class WizardDialog(QDialog):
         self._busy = False
         self.preset = preset
         self.doc_info = info
-        self.candidates = wiz.top_level_layers(info)
+        # Every layer, groups flattened: a Color Fill layer is often inside a group,
+        # and a normal layer with a Color Overlay style is the other way templates
+        # tint the wallpaper (both are offered as "the colour layer").
+        self.candidates = wiz.all_layers(info)
         self._analyzed = True
         self.pick_status.setText(
             f"{info.get('width', '?')}×{info.get('height', '?')}  ·  {len(self.candidates)} layers"
@@ -191,13 +195,20 @@ class WizardDialog(QDialog):
         lay.addWidget(title)
         self.so_desktop_combo = self._add_combo(lay, i18n.tr("wizard.layers.desktopSO"), "Smart Object")
         self.so_mobile_combo = self._add_combo(lay, i18n.tr("wizard.layers.mobileSO"), "Smart Object")
-        self.fill_combo = self._add_combo(lay, i18n.tr("wizard.layers.fill"), "Fill")
+        self.fill_combo = self._add_combo(lay, i18n.tr("wizard.layers.fill"), "ColorLayer")
         self.text_combo = self._add_combo(lay, i18n.tr("wizard.layers.text"), "Type")
         self.map_status = QLabel("")
         self.map_status.setProperty("dim", True)
         self.map_status.setWordWrap(True)
         lay.addWidget(self.map_status)
         lay.addStretch(1)
+        self.fill_hint = QLabel("")
+        self.fill_hint.setProperty("dim", True)
+        self.fill_hint.setWordWrap(True)
+        hint_row = QHBoxLayout()
+        hint_row.addSpacing(220)
+        hint_row.addWidget(self.fill_hint, 1)
+        lay.insertLayout(lay.count() - 1, hint_row)  # right under the colour combo
         for c in (self.so_desktop_combo, self.so_mobile_combo, self.fill_combo, self.text_combo):
             c.currentIndexChanged.connect(self._mapping_changed)
         self.stack.addWidget(page)
@@ -218,18 +229,22 @@ class WizardDialog(QDialog):
     def _populate_combos(self) -> None:
         for combo in (self.so_desktop_combo, self.so_mobile_combo):
             self._fill_combo(combo, kinds={"Smart Object"})
-        self._fill_combo(self.fill_combo, kinds={"Fill"})
+        # "Solid color" means either Photoshop flavour: a Color Fill layer, or a
+        # normal layer with a Color Overlay layer style (see LayerCandidate).
+        self._fill_combo(self.fill_combo, kinds={"Fill"}, also=lambda c: c.is_color_layer)
         self._fill_combo(self.text_combo, kinds={"Type"})
         self._auto_select()
         self._mapping_changed()
 
-    def _fill_combo(self, combo: QComboBox, kinds: set[str]) -> None:
+    def _fill_combo(self, combo: QComboBox, kinds: set[str], also=None) -> None:
         combo.clear()
         for cand in self.candidates:
-            if cand.kind in kinds:
+            if cand.kind in kinds or (also is not None and also(cand)):
                 thumb = self.thumbs.get(cand.id)
                 icon = QIcon(str(thumb)) if thumb else QIcon()
                 combo.addItem(icon, cand.label, cand.id)
+        if combo is self.fill_combo:
+            self._set_fill_hint()
 
     def _decorate_combo(self, combo: QComboBox) -> None:
         for i in range(combo.count()):
@@ -238,12 +253,36 @@ class WizardDialog(QDialog):
             if thumb:
                 combo.setItemIcon(i, QIcon(str(thumb)))
 
+    def _current_fill_candidate(self) -> wiz.LayerCandidate | None:
+        lid = self.fill_combo.currentData()
+        if lid is None:
+            return None
+        return next((c for c in self.candidates if c.id == int(lid)), None)
+
+    def _fill_mode(self) -> str:
+        """Which engine command colours the layer (see presets.MODE_*)."""
+        cand = self._current_fill_candidate()
+        if cand is not None and cand.kind != "Fill" and cand.has_color_overlay:
+            return presets_mod.MODE_COLOR_OVERLAY
+        return presets_mod.MODE_FILL
+
+    def _set_fill_hint(self) -> None:
+        if not hasattr(self, "fill_hint"):
+            return
+        cand = self._current_fill_candidate()
+        if cand is None:
+            self.fill_hint.setText("")
+        elif self._fill_mode() == presets_mod.MODE_COLOR_OVERLAY:
+            self.fill_hint.setText(i18n.tr("wizard.fillOverlayHint", name=cand.name))
+        else:
+            self.fill_hint.setText(i18n.tr("wizard.fillSolidHint", name=cand.name))
+
     def _auto_select(self) -> None:
         """Prefer sensibly named layers to help non-technical users."""
         hints = {
             "so_desktop_combo": ("desktop", "imac", "pc", "monitor"),
             "so_mobile_combo": ("mobile", "phone", "iphone"),
-            "fill_combo": ("color", "bg", "background", "solid"),
+            "fill_combo": ("color", "bg", "background", "solid", "overlay"),
             "text_combo": ("code", "text", "label"),
         }
         for attr, words in hints.items():
@@ -261,6 +300,7 @@ class WizardDialog(QDialog):
     def _mapping_changed(self) -> None:
         if not self.preset:
             return
+        self._set_fill_hint()
         ok, problems = self._apply_mapping()
         self.map_status.setText("\n".join(problems) if problems else "")
         self.next_btn.setEnabled(ok)
@@ -279,6 +319,8 @@ class WizardDialog(QDialog):
         p.desktop_smart_object = ref(self.so_desktop_combo)
         p.mobile_smart_object = ref(self.so_mobile_combo)
         p.solid_color_fill = ref(self.fill_combo)
+        if p.solid_color_fill is not None:
+            p.solid_color_fill.mode = self._fill_mode()
         p.text_layer = ref(self.text_combo)
         if p.desktop_smart_object is None or p.mobile_smart_object is None:
             problems.append("- " + i18n.tr("wizard.layers.desktopSO") + " / " + i18n.tr("wizard.layers.mobileSO"))

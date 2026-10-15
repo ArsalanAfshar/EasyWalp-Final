@@ -127,3 +127,83 @@ def test_full_pipeline_4k_names_with_suffix(tmp_path, data_dir, tiny_images):
     # warnings: both images smaller than 4K targets
     assert any("desktop image" in w and "upscaled" in w for w in result.warnings)
     assert any("mobile image" in w and "upscaled" in w for w in result.warnings)
+
+
+# --------------------------------------------- the two flavours of a colour layer
+def test_color_overlay_layer_is_coloured_through_its_layer_style(tmp_path, data_dir, sample_images):
+    """A normal layer + Color Overlay must be as good as a Color Fill layer.
+
+    Photoshop templates tint the wallpaper either with a Solid Color *fill layer* or
+    with a normal layer carrying a **Color Overlay** layer style. The preset records
+    which one it was mapped to, and the pipeline has to send the matching command -
+    `layer.fill.solidColor.set` does nothing on a layer that has no fill.
+    """
+    from unittest import mock
+
+    import easywalp.paths
+    import os
+
+    shim = _shim(tmp_path)
+    os.environ["FAKE_STATE_DIR"] = str(tmp_path)
+    desktop, mobile = sample_images
+    preset = _preset(data_dir)
+    # "BG Overlay" is a Pixel layer with a colorOverlay effect, inside a group (id 21).
+    preset.solid_color_fill = LayerRef(id=21, name="BG Overlay", kind="Pixel", mode="colorOverlay")
+    preset.save()
+    with mock.patch.object(easywalp.paths, "temp_dir", return_value=tmp_path / "tmpdata3"):
+        pipeline = Pipeline(FakeBinary(shim))
+        result = pipeline.generate(preset, desktop, mobile, "O", 236, data_dir / "out-overlay")
+
+    calls = json.loads((tmp_path / "calls.json").read_text())["calls"]
+    kinds = [c["cmd"] for c in calls]
+    assert "layer.layerStyle.colorOverlay" in kinds
+    assert "layer.fill.solidColor.set" not in kinds, "a Color Overlay layer has no fill to set"
+    colour_call = calls[kinds.index("layer.layerStyle.colorOverlay")]
+    assert colour_call["params"] == {"layer": 21, "color": "#1e5a96"}
+    assert result.preview_jpg.exists()
+
+
+def test_a_colour_layer_inside_a_group_is_found(tmp_path, data_dir, sample_images):
+    """Nested layers must resolve: PhotoCraft lists them under `children`."""
+    from unittest import mock
+
+    import easywalp.paths
+    import os
+
+    shim = _shim(tmp_path)
+    os.environ["FAKE_STATE_DIR"] = str(tmp_path)
+    desktop, mobile = sample_images
+    preset = _preset(data_dir)
+    # Ids shift when the PSD is re-saved, and the nested layer now lives at another
+    # id - the name+kind match (plus the group walk) has to find it anyway.
+    preset.solid_color_fill = LayerRef(id=999, name="BG Overlay", kind="Pixel", mode="colorOverlay")
+    with mock.patch.object(easywalp.paths, "temp_dir", return_value=tmp_path / "tmpdata4"):
+        pipeline = Pipeline(FakeBinary(shim))
+        result = pipeline.generate(preset, desktop, mobile, "O", 12, data_dir / "out-nested")
+
+    calls = json.loads((tmp_path / "calls.json").read_text())["calls"]
+    overlays = [c for c in calls if c["cmd"] == "layer.layerStyle.colorOverlay"]
+    assert overlays, "the nested Color Overlay layer was not found"
+    assert overlays[-1]["params"]["layer"] == 21
+    assert any("moved from id 999" in w for w in result.warnings)
+
+
+def test_preset_saves_and_loads_the_colour_mode(data_dir):
+    """Old presets (no mode) keep working and mean the fill-layer behaviour."""
+    preset = _preset(data_dir)
+    preset.solid_color_fill = LayerRef(id=21, name="BG Overlay", kind="Pixel", mode="colorOverlay")
+    preset.save()
+    payload = json.loads(preset.json_path.read_text())
+    assert payload["layers"]["solidColorFill"]["mode"] == "colorOverlay"
+    reloaded = Preset.load(preset.id)
+    assert reloaded.solid_color_fill is not None
+    assert reloaded.solid_color_fill.uses_color_overlay is True
+
+    # a preset written by an older EasyWalp has no "mode" at all
+    payload["layers"]["solidColorFill"].pop("mode")
+    payload["layers"]["solidColorFill"]["kind"] = "Fill"
+    preset.json_path.write_text(json.dumps(payload))
+    old = Preset.load(preset.id)
+    assert old.solid_color_fill is not None
+    assert old.solid_color_fill.uses_color_overlay is False
+    assert old.solid_color_fill.to_dict() == {"id": 21, "name": "BG Overlay", "kind": "Fill"}

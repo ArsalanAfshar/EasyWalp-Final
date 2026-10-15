@@ -52,7 +52,7 @@
   "wizard.step4": "4. Check & dry run",
   "wizard.layers.desktopSO": "Desktop Smart Object layer",
   "wizard.layers.mobileSO": "Mobile Smart Object layer",
-  "wizard.layers.fill": "Solid Color fill layer",
+  "wizard.layers.fill": "Solid color layer (Color Fill or Color Overlay)",
   "wizard.layers.text": "Text layer with the code",
   "wizard.detectCode": "Detected code",
   "wizard.codeHint": "Select the code part inside the text if the detection is wrong",
@@ -124,5 +124,7 @@
   "and.aboutEngine": "Powered by the open-source PhotoCraft engine (MIT OR Apache-2.0).",
   "and.aboutLicenses": "Vazirmatn font: SIL OFL 1.1. The preview mockup is always rendered by PhotoCraft.",
   "and.androidHint": "Android build — the preview is rendered on the device by the bundled PhotoCraft engine.",
-  "wizard.psdMissing": "The file does not exist:\n{path}"
+  "wizard.psdMissing": "The file does not exist:\n{path}",
+  "wizard.fillOverlayHint": "{name}: a Color Overlay layer style - its colour is changed on every run.",
+  "wizard.fillSolidHint": "{name}: a solid color fill layer - its colour is changed on every run."
 }

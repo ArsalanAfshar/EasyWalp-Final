@@ -24,18 +24,38 @@ log = logging.getLogger("easywalp.wizard")
 
 @dataclass
 class LayerCandidate:
-    """One top-level layer as shown in the wizard's mapping lists."""
+    """One layer as shown in the wizard's mapping lists."""
 
     id: int
     name: str
     kind: str  # PhotoCraft kind_name(): Pixel/Group/Adjustment/Fill/Type/Shape/Smart Object
     visible: bool
     thumbnail: Path | None = None
+    #: Layer-style effect kinds (`effects.items[].kind`), e.g. ("colorOverlay",).
+    effects: tuple[str, ...] = ()
+    #: "Group / Child" for a nested layer, "" for a top-level one.
+    path: str = ""
+
+    @property
+    def has_color_overlay(self) -> bool:
+        return "colorOverlay" in self.effects
+
+    @property
+    def is_color_layer(self) -> bool:
+        """A layer that means "the background colour" to the wizard.
+
+        Either a Solid Color fill layer (Photoshop's Color Fill) or any layer
+        carrying a Color Overlay layer style - both are what a template author
+        uses to tint the wallpaper.
+        """
+        return self.kind == "Fill" or self.has_color_overlay
 
     @property
     def label(self) -> str:
         vis = "" if self.visible else "  (hidden)"
-        return f"[{self.kind}] {self.name}{vis}"
+        where = f"{self.path} / " if self.path else ""
+        shown = "Color Overlay" if (self.has_color_overlay and self.kind != "Fill") else self.kind
+        return f"[{shown}] {where}{self.name}{vis}"
 
 
 def inspect_psd(binary: PhotoCraftBinary, psd: Path) -> dict:
@@ -45,21 +65,60 @@ def inspect_psd(binary: PhotoCraftBinary, psd: Path) -> dict:
     return pc_info(binary.path, psd)
 
 
+def _candidate(item: dict, path: str = "") -> LayerCandidate | None:
+    try:
+        lid = int(item.get("id"))
+    except (TypeError, ValueError):
+        return None
+    effects = item.get("effects") or {}
+    items = effects.get("items") if isinstance(effects, dict) else None
+    kinds = tuple(
+        str(e.get("kind", "")) for e in (items or []) if isinstance(e, dict)
+    )
+    return LayerCandidate(
+        id=lid,
+        name=str(item.get("name", "")),
+        kind=str(item.get("kind", "")),
+        visible=bool(item.get("visible", True)),
+        effects=kinds,
+        path=path,
+    )
+
+
 def top_level_layers(doc: dict) -> list[LayerCandidate]:
+    """The document's top-level layers (what `doc.exportLayers` numbers)."""
     out: list[LayerCandidate] = []
     for item in doc.get("layers", []) or []:
-        try:
-            lid = int(item.get("id"))
-        except (TypeError, ValueError):
+        if not isinstance(item, dict):
             continue
-        out.append(
-            LayerCandidate(
-                id=lid,
-                name=str(item.get("name", "")),
-                kind=str(item.get("kind", "")),
-                visible=bool(item.get("visible", True)),
-            )
-        )
+        cand = _candidate(item)
+        if cand is not None:
+            out.append(cand)
+    return out
+
+
+def all_layers(doc: dict) -> list[LayerCandidate]:
+    """Every layer, groups flattened, each labelled with its group path.
+
+    `doc.exportLayers` only exports top-level layers, so nested candidates come
+    back without a thumbnail - but they are selectable, which matters because a
+    Color Fill layer is often tucked inside a group.
+    """
+    out: list[LayerCandidate] = []
+
+    def walk(items: list, path: str) -> None:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            cand = _candidate(item, path)
+            if cand is not None:
+                out.append(cand)
+            children = item.get("children")
+            if isinstance(children, list):
+                child_path = f"{path} / {cand.name}" if path else str(cand.name)
+                walk(children, child_path)
+
+    walk(doc.get("layers", []) or [], "")
     return out
 
 

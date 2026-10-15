@@ -52,7 +52,7 @@
   "wizard.step4": "۴. بررسی و تست",
   "wizard.layers.desktopSO": "لایه اسمارت‌آبجکت دسکتاپ",
   "wizard.layers.mobileSO": "لایه اسمارت‌آبجکت موبایل",
-  "wizard.layers.fill": "لایه Solid Color",
+  "wizard.layers.fill": "لایهٔ رنگ ساده (Color Fill یا Color Overlay)",
   "wizard.layers.text": "لایه متن دارای کد",
   "wizard.detectCode": "کد شناسایی‌شده",
   "wizard.codeHint": "اگر تشخیص اشتباه است، بخش کد را داخل متن انتخاب کنید",
@@ -124,5 +124,7 @@
   "and.aboutEngine": "رندر پیش‌نمایش با موتور متن‌باز PhotoCraft (مجوز MIT OR Apache-2.0).",
   "and.aboutLicenses": "فونت وزیرمتن: OFL 1.1. پیش‌نمایش ماکاپ همیشه توسط موتور PhotoCraft ساخته می‌شود.",
   "and.androidHint": "نسخه اندروید — پیش‌نمایش همان‌جا روی دستگاه با موتور همراه برنامه رندر می‌شود.",
-  "wizard.psdMissing": "این فایل وجود ندارد:\n{path}"
+  "wizard.psdMissing": "این فایل وجود ندارد:\n{path}",
+  "wizard.fillOverlayHint": "{name}: افکت Color Overlay دارد؛ رنگ همان افکت در هر اجرا عوض می‌شود.",
+  "wizard.fillSolidHint": "{name}: لایهٔ رنگ ساده (Color Fill) است؛ رنگ همان لایه در هر اجرا عوض می‌شود."
 }

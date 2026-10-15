@@ -31,6 +31,13 @@ DOC = {"width": 2000, "height": 1500, "layers": [
     {"id": 12, "name": "Desktop Screen", "kind": "Smart Object"},
     {"id": 15, "name": "Phone Screen", "kind": "Smart Object"},
     {"id": 3, "name": "BG Color", "kind": "Fill"},
+    # A normal layer that means "the background colour" through a Color Overlay
+    # layer style, nested in a group: the second flavour of a colour layer, and the
+    # one a "Color Fill" template uses when the fill sits inside a folder.
+    {"id": 25, "name": "Tint group", "kind": "Group", "children": [
+        {"id": 21, "name": "BG Overlay", "kind": "Pixel",
+         "effects": {"enabled": True, "items": [{"kind": "colorOverlay", "enabled": True}]}},
+    ]},
     {"id": 8, "name": "Code label", "kind": "Type", "font": "Vazirmatn"},
 ]}
 SO_SIZES = {12: (1600, 900), 15: (900, 1600)}
@@ -69,7 +76,8 @@ def handle(rid, method, params):
         return True, DOC
     if method == "doc.exportLayers":
         out = params.get("dir", ".")
-        for index, layer in enumerate([l for l in DOC["layers"] if l["kind"] != "Adjustment"]):
+        top = [l for l in DOC["layers"] if l["kind"] != "Adjustment"]
+        for index, layer in enumerate(top):
             name = "layer_%04d_%s.png" % (index, layer["name"].replace(" ", "_"))
             open(os.path.join(out, name), "wb").write(png_bytes((60, 40)))
         return True, {"count": 4}
@@ -117,6 +125,28 @@ def handle(rid, method, params):
             state["calls"].append({"cmd": cmd, "params": p})
             save_state()
             return True, {}
+        if cmd == "layer.layerStyle.colorOverlay":
+            layer = int(p.get("layer", 0))
+            doc_layer = None
+            for item in DOC["layers"]:
+                if int(item["id"]) == layer:
+                    doc_layer = item
+                for child in item.get("children", []) or []:
+                    if int(child["id"]) == layer:
+                        doc_layer = child
+            if doc_layer is None:
+                return False, {"error": "no layer %s" % layer}
+            effects = doc_layer.setdefault("effects", {"enabled": True, "items": []})
+            for effect in effects["items"]:
+                if effect.get("kind") == "colorOverlay":
+                    effect["color"] = p.get("color")
+                    effect["enabled"] = True
+                    break
+            else:
+                effects["items"].append({"kind": "colorOverlay", "enabled": True, "color": p.get("color")})
+            state["calls"].append({"cmd": cmd, "params": p})
+            save_state()
+            return True, {"layer": layer}
         if cmd == "layer.newFillLayer.solidColor":
             state["calls"].append({"cmd": cmd, "params": p})
             save_state()

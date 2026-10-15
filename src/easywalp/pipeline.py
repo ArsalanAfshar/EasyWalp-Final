@@ -32,7 +32,7 @@ from PIL import Image
 from . import paths, presets as presets_mod
 from .config import RESOLUTIONS, GenerateOptions, Resolution, AVG_COLOR_SAMPLE_SIZE
 from .photocraft import PhotoCraftBinary, PhotoCraftError, Session
-from .presets import LayerRef, Preset
+from .presets import COLOR_OVERLAY_KIND, LayerRef, Preset
 
 log = logging.getLogger("easywalp.pipeline")
 
@@ -437,7 +437,24 @@ class Pipeline:
                 _collect_warnings(result, warnings)
             report("editing", 0.6)
 
-            result = session.execute("layer.fill.solidColor.set", {"layer": fill_id, "color": color})
+            # Two kinds of "solid colour" layer mean the same thing to the user: a Solid
+            # Color fill layer, or a normal layer carrying a Color Overlay layer style.
+            if fill_ref.uses_color_overlay:
+                if COLOR_OVERLAY_KIND not in tuple(layers.get(fill_id, {}).get("effects", ())):
+                    warnings.append(
+                        f"the colour layer '{fill_ref.name}' has no Color Overlay layer style; "
+                        "one is added with the new colour"
+                    )
+                result = session.execute(
+                    "layer.layerStyle.colorOverlay", {"layer": fill_id, "color": color}
+                )
+            else:
+                if layers.get(fill_id, {}).get("kind") != "Fill":
+                    warnings.append(
+                        f"the colour layer '{fill_ref.name}' is not a solid color fill layer "
+                        "(kind Fill) any more; the colour may not change"
+                    )
+                result = session.execute("layer.fill.solidColor.set", {"layer": fill_id, "color": color})
             _collect_warnings(result, warnings)
             report("editing", 0.7)
 
@@ -476,20 +493,44 @@ def _require_ref(ref: LayerRef | None, label: str) -> LayerRef:
     return ref
 
 
+def _effect_kinds(item: dict) -> tuple[str, ...]:
+    """Layer-style effect kinds PhotoCraft reports (`effects.items[].kind`)."""
+    effects = item.get("effects")
+    if not isinstance(effects, dict):
+        return ()
+    items = effects.get("items")
+    if not isinstance(items, list):
+        return ()
+    return tuple(str(e.get("kind", "")) for e in items if isinstance(e, dict))
+
+
 def _flatten_layers(doc: dict) -> dict[int, dict]:
-    """Map layer id -> {name, kind} for every layer, groups included (recursive)."""
+    """Map layer id -> {name, kind, effects} for every layer, groups included.
+
+    Nested layers live under ``children`` in PhotoCraft's JSON view
+    (``inspect::layer_sel``) - walking only ``layers`` silently lost every layer
+    inside a group, which is exactly where a "Color Fill" layer tends to sit.
+    """
     out: dict[int, dict] = {}
 
     def walk(items: list) -> None:
         for item in items:
+            if not isinstance(item, dict):
+                continue
             try:
                 lid = int(item.get("id"))
             except (TypeError, ValueError):
                 continue
-            out[lid] = {"name": str(item.get("name", "")), "kind": str(item.get("kind", ""))}
-            children = item.get("layers")
-            if isinstance(children, list):
-                walk(children)
+            out[lid] = {
+                "name": str(item.get("name", "")),
+                "kind": str(item.get("kind", "")),
+                "effects": _effect_kinds(item),
+                "visible": bool(item.get("visible", True)),
+            }
+            for key in ("children", "layers"):
+                children = item.get(key)
+                if isinstance(children, list):
+                    walk(children)
 
     walk(doc.get("layers", []) or [])
     return out

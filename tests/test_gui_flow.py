@@ -436,3 +436,52 @@ def test_page_one_recovers_from_a_missing_or_broken_psd(
     from easywalp.presets import Preset
 
     assert Preset.load_all() == []
+
+
+def test_wizard_offers_a_color_overlay_layer_as_the_solid_color(qapp, data_dir, engine_env, i18n_en, psd, quiet_box, monkeypatch):
+    """A "Solid Color (Color Fill)" layer the old build could not see.
+
+    The fake PSD has both flavours: a Fill layer (id 3) and a normal layer with a
+    Color Overlay layer style (id 21, inside the "Tint group" group). Both must be
+    selectable as the colour layer, and the mode saved with the preset must match
+    the one the user picked.
+    """
+    from easywalp.app.wizard import WizardDialog
+    from easywalp.presets import import_psd_as_preset
+
+    dialog = WizardDialog(engine_env["settings"], _binary(engine_env))
+    monkeypatch.setattr(dialog, "_start_thumbnails", lambda: None)
+    preset = import_psd_as_preset(psd, psd.stem, "0.0.0")
+    dialog.psd_edit.setText(str(psd))
+    dialog._analyzed_ok((preset, _inspect(engine_env, preset)))
+
+    combo = dialog.fill_combo
+    texts = [combo.itemText(i) for i in range(combo.count())]
+    assert any("BG Color" in t and t.startswith("[Fill]") for t in texts), texts
+    overlay_label = next((t for t in texts if "BG Overlay" in t), None)
+    assert overlay_label is not None, f"the Color Overlay layer is not offered: {texts}"
+    assert overlay_label.startswith("[Color Overlay]")
+    assert "Tint group" in overlay_label, "a nested layer shows the group it lives in"
+
+    def select(layer_id: int) -> None:
+        for i in range(combo.count()):
+            if int(combo.itemData(i)) == layer_id:
+                combo.setCurrentIndex(i)
+                return
+        raise AssertionError(f"layer {layer_id} is not in the colour combo")
+
+    # the nested Color Overlay layer
+    select(21)
+    ok, problems = dialog._apply_mapping()
+    assert ok, problems
+    assert dialog.preset.solid_color_fill.mode == "colorOverlay"
+    assert dialog.preset.solid_color_fill.id == 21
+    assert "Color Overlay" in dialog.fill_hint.text()
+
+    # and the plain fill layer still maps the original way
+    select(3)
+    ok, problems = dialog._apply_mapping()
+    assert ok, problems
+    assert dialog.preset.solid_color_fill.mode == "fill"
+    assert dialog.preset.solid_color_fill.id == 3
+    assert "fill" in dialog.fill_hint.text().lower()

@@ -34,6 +34,19 @@ class PresetError(RuntimeError):
     """Readable preset problem (validation, IO, schema)."""
 
 
+#: How the mapped "solid color" layer is coloured. Photoshop templates come in two
+#: flavours and both mean the same thing to the user, so the preset remembers which
+#: one it was set up with:
+#:
+#: * ``MODE_FILL`` - a Solid Color *fill layer* (kind "Fill"): the layer's own colour
+#:   is changed with ``layer.fill.solidColor.set``.
+#: * ``MODE_COLOR_OVERLAY`` - any normal layer carrying a **Color Overlay** layer
+#:   effect: the effect's colour is changed with ``layer.layerStyle.colorOverlay``.
+MODE_FILL = "fill"
+MODE_COLOR_OVERLAY = "colorOverlay"
+COLOR_OVERLAY_KIND = "colorOverlay"
+
+
 @dataclass
 class LayerRef:
     """A mapped layer, stored by id AND name AND kind so every run re-validates."""
@@ -41,13 +54,28 @@ class LayerRef:
     id: int
     name: str
     kind: str  # PhotoCraft kind_name(): "Smart Object" | "Fill" | "Type" | ...
+    #: Only meaningful for the solid-colour mapping: MODE_FILL or MODE_COLOR_OVERLAY.
+    #: Presets written before this existed have no value and mean MODE_FILL.
+    mode: str = ""
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "name": self.name, "kind": self.kind}
+        data = {"id": self.id, "name": self.name, "kind": self.kind}
+        if self.mode:
+            data["mode"] = self.mode
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "LayerRef":
-        return cls(id=int(data["id"]), name=str(data["name"]), kind=str(data["kind"]))
+        return cls(
+            id=int(data["id"]),
+            name=str(data["name"]),
+            kind=str(data["kind"]),
+            mode=str(data.get("mode", "") or ""),
+        )
+
+    @property
+    def uses_color_overlay(self) -> bool:
+        return self.mode == MODE_COLOR_OVERLAY
 
 
 @dataclass

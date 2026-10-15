@@ -27,6 +27,8 @@ from easywalp.pipeline import (
     plan_names,
 )
 from easywalp.presets import (
+    MODE_COLOR_OVERLAY,
+    MODE_FILL,
     LayerRef,
     Preset,
     PresetError,
@@ -42,10 +44,10 @@ from easywalp.presets import (
 from easywalp.presets import detect_code_span as _detect_code_span
 from easywalp.wizard import (
     LayerCandidate,
+    all_layers,
     font_warnings_from,
     inspect_psd,
     shrink_thumbnail,
-    top_level_layers,
 )
 
 log = logging.getLogger("easywalp.android.core")
@@ -134,7 +136,7 @@ class Core:
         """Map a PSD with a single engine session: layers, smart-object sizes, code text."""
         binary = self.engine()
         doc = inspect_psd(binary, psd)
-        layers = top_level_layers(doc)
+        layers = all_layers(doc)
         if not layers:
             raise CoreError("this PSD has no layers PhotoCraft could read")
         suggestions = _suggest_roles(layers, doc)
@@ -367,11 +369,18 @@ def fallback_output_dir() -> Path:
 def _suggest_roles(layers: list[LayerCandidate], doc: dict) -> dict[str, LayerRef | None]:
     """Best-guess mapping from layer names/kinds - the user can change every pick."""
     smart = [c for c in layers if c.kind == "Smart Object"]
-    fills = [c for c in layers if c.kind == "Fill"]
+    # A "solid colour" layer is either a Color Fill layer or any layer with a Color
+    # Overlay layer style - the same rule the desktop wizard uses.
+    fills = [c for c in layers if c.is_color_layer]
     texts = [c for c in layers if c.kind == "Type"]
 
     def ref(candidate: LayerCandidate | None) -> LayerRef | None:
-        return LayerRef(candidate.id, candidate.name, candidate.kind) if candidate else None
+        if candidate is None:
+            return None
+        mode = MODE_FILL
+        if candidate.kind != "Fill" and candidate.has_color_overlay:
+            mode = MODE_COLOR_OVERLAY
+        return LayerRef(candidate.id, candidate.name, candidate.kind, mode)
 
     desktop, mobile = (smart[0], smart[1]) if len(smart) > 1 else (smart[0] if smart else None, None)
     for candidate in smart:

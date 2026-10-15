@@ -54,8 +54,10 @@ def fake_psd(tmp_path):
 # --------------------------------------------------------------------- analysis
 def test_analyze_maps_layers_and_sizes(core, fake_psd):
     analysis = core.analyze(fake_psd, fake_psd.parent / "work")
+    # Nested layers are candidates too (a Color Fill layer often sits in a group), and
+    # the list is flat: top-level layers in order, then their children.
     assert [layer.name for layer in analysis.layers] == [
-        "Desktop Screen", "Phone Screen", "BG Color", "Code label"
+        "Desktop Screen", "Phone Screen", "BG Color", "Tint group", "BG Overlay", "Code label"
     ]
     roles = {role: (ref.name if ref else None) for role, ref in analysis.suggestions.items()}
     assert roles == {
@@ -64,6 +66,10 @@ def test_analyze_maps_layers_and_sizes(core, fake_psd):
         "fill": "BG Color",
         "text": "Code label",
     }
+    # the two ways a template says "this is the background colour" are both known
+    overlay = next(layer for layer in analysis.layers if layer.name == "BG Overlay")
+    assert overlay.is_color_layer and overlay.has_color_overlay
+    assert overlay.label.startswith("[Color Overlay]")
     assert analysis.contents == {"desktop": (1600, 900), "mobile": (900, 1600)}
     assert analysis.code_text == "Code:MD-O-C236"
     assert analysis.code_span == (5, 14)

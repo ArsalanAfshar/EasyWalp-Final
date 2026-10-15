@@ -3,6 +3,23 @@
 All notable changes to EasyWalp are documented here. Format: Keep a Changelog,
 Semantic Versioning.
 
+## [0.1.2] - 2026-10-16
+
+### Fixed
+- **Desktop: a "Solid Color (Color Fill)" layer the wizard could not see.** Two
+  causes, both fixed:
+  - a layer inside a group was never offered - PhotoCraft nests layers under
+    `children` and the layer walk only looked at top-level `layers`. Nested layers
+    are now listed (labelled `Group / Layer`) and, more importantly, *resolved* at
+    generate time - a mapped layer inside a folder used to fail with "not found in
+    the PSD".
+  - the colour layer no longer has to be a fill layer: any layer carrying a
+    **Color Overlay** layer style is offered as well, shown as
+    `[Color Overlay] Group / Layer`. The preset remembers which flavour it was set
+    up with (a fill layer -> `layer.fill.solidColor.set`, a Color Overlay ->
+    `layer.layerStyle.colorOverlay`), the wizard explains which one is in use, and
+    an old preset without that note keeps meaning the fill behaviour.
+
 ## [0.1.1] - 2026-10-15
 
 ### Fixed
