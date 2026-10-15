@@ -264,6 +264,9 @@ def export_preset(preset: Preset, dest_file: Path, include_fonts: bool = False) 
     if not preset.template_path.exists():
         raise PresetError("the preset has no PSD template to export")
     dest_file = dest_file.with_suffix(".easywalp")
+    # A save dialog returns whatever the user typed, including a folder that does
+    # not exist yet - create it instead of failing with a traceback.
+    dest_file.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest_file, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(preset.json_path, PRESET_FILE)
         zf.write(preset.template_path, TEMPLATE_FILE)

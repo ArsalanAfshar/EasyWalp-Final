@@ -36,9 +36,11 @@ permissions:
 
 concurrency:
   # A branch push, a tag push and a manual release are independent: they only share
-  # the caches, not the queue (this is a public repo, so minutes are free).
+  # the caches, not the queue (this is a public repo, so minutes are free). A newer
+  # push to the *same* ref supersedes the older run - but never a release, which
+  # lives in its own group.
   group: ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.11"
@@ -109,9 +111,26 @@ jobs:
         run: |
           set +e
           (
-            sudo apt-get install -y xvfb libsdl2-2.0-0 libgl1-mesa-dri libglx-mesa0 libxkbcommon-x11-0
+            sudo apt-get install -y xvfb libsdl2-2.0-0 libgl1 libglx-mesa0 libgl1-mesa-dri \
+                                    libegl1 libgles2 libglu1-mesa libxkbcommon-x11-0
             pip install kivy==2.3.1 arabic-reshaper python-bidi
-            xvfb-run -a python -m pytest -q -rs tests/test_android_ui.py
+            # Building the widgets creates GL textures, and Kivy only survives some
+            # of the headless Mesa backends; try them in order and keep the first
+            # one that reports green (the log shows which one worked).
+            STATUS=1
+            for cfg in \
+              "KIVY_GL_BACKEND=gl LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe" \
+              "KIVY_GL_BACKEND=sdl2 LIBGL_ALWAYS_SOFTWARE=1" \
+              "KIVY_GL_BACKEND=mock" \
+            ; do
+              echo "=== pytest with $cfg"
+              env $cfg KIVY_NO_ARGS=1 xvfb-run -a -s "-screen 0 1280x1024x24" \
+                python -m pytest -q -rs tests/test_android_ui.py
+              STATUS=$?
+              echo "=== exit=$STATUS with $cfg"
+              [ "$STATUS" -eq 0 ] && break
+            done
+            exit "$STATUS"
           ) > kivy-output.txt 2>&1
           STATUS=$?
           tail -60 kivy-output.txt
