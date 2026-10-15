@@ -117,11 +117,12 @@ config/              photocraft-pin.json (exact engine commit, reproducible buil
 
 ## Third-party / licensing
 
-- EasyWalp: MIT (see `LICENSE`).
-- [PhotoCraft](https://github.com/storytold/photocraft): MIT OR Apache-2.0 —
-  licenses and NOTICE ship in `assets/photocraft/` and inside the app
-  (About → Licenses). PhotoCraft/ArtCraft names and logos are their trademarks;
-  this project uses neither, only the code via its CLI.
+- EasyWalp © 2026 Arsalan Afshar (Wallify) — all rights reserved; the attribution
+  notice must be kept (see `LICENSE`).
+- **Powered by PhotoCraft engine** ([storytold/photocraft](https://github.com/storytold/photocraft)):
+  MIT OR Apache-2.0 — licenses and NOTICE ship in `assets/photocraft/` and inside
+  the app (About → Licenses). PhotoCraft/ArtCraft names and logos are their
+  trademarks; this project uses neither, only the code via its CLI.
 - [Vazirmatn font](https://github.com/rastikerdar/vazirmatn): SIL OFL 1.1.
 
 ---
@@ -180,6 +181,10 @@ set PATH=%CD%\engines;%PATH%
 pytest -q
 python -m easywalp gui
 ```
+
+**مجوز:** EasyWalp © ۲۰۲۶ ارسلان افشار (والیفای) — تمام حقوق محفوظ است؛ متن
+«Powered by PhotoCraft engine» باید حفظ شود. موتور PhotoCraft تحت مجوز
+MIT OR Apache-2.0 و فونت وزیرمتن تحت OFL استفاده می‌شود (مجزا از مجوز EasyWalp).
 
 برای انتشار نسخه جدید فقط یک تگ بزنید (مثل `v1.2.3`)؛ GitHub Actions همه‌چیز را
 می‌سازد و در Releases می‌گذارد. مراحل دقیق: `docs/RELEASE-CHECKLIST.md`.

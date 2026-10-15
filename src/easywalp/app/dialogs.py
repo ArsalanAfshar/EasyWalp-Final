@@ -30,7 +30,7 @@ from ..photocraft import PhotoCraftBinary, PhotoCraftError
 from .widgets import make_button
 
 LICENSE_TABS = [
-    ("EasyWalp (MIT)", "assets/LICENSE"),
+    ("EasyWalp", "assets/LICENSE"),
     ("PhotoCraft - MIT", "assets/photocraft/LICENSE-MIT.txt"),
     ("PhotoCraft - Apache-2.0", "assets/photocraft/LICENSE-APACHE.txt"),
     ("PhotoCraft NOTICE", "assets/photocraft/NOTICE.txt"),

@@ -1,32 +1,31 @@
-MIT License
+EasyWalp — Copyright (c) 2026 Arsalan Afshar (Wallify channel, https://t.me/WallifyChannel).
+All rights reserved.
 
-Copyright (c) 2026 Arsalan Afshar (Wallify)
+This application ("EasyWalp") and its source code are the property of the
+copyright holder. Redistribution or use must keep this notice and the
+attribution below intact. Derivative works must not imply endorsement by the
+copyright holder.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ATTRIBUTION
+-----------
+EasyWalp is Powered by PhotoCraft engine (https://github.com/storytold/photocraft).
+The PhotoCraft engine is used as an external, unmodified binary under its own
+dual license:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+    PhotoCraft
+    Copyright (c) 2026 ArtCraft Team and the PhotoCraft contributors.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+    Licensed under the MIT License or the Apache License, Version 2.0, at your
+    option (see LICENSE-MIT.txt and LICENSE-APACHE.txt shipped with the app and
+    in the About dialog). THE PHOTOCRAFT CONTRIBUTORS PROVIDE IT "AS IS",
+    WITHOUT WARRANTY OF ANY KIND.
 
----
+BUNDLED THIRD-PARTY MATERIAL (unchanged, under its own licenses)
+----------------------------------------------------------------
+- PhotoCraft engine: MIT OR Apache-2.0 (texts in assets/photocraft/).
+- Vazirmatn font: SIL Open Font License 1.1 (assets/fonts/OFL-Vazirmatn.txt).
+- Pillow: HPND-CMU/MIT-CMU. PySide6/Qt: LGPL-3.0 (dynamically linked).
 
-Third-party components (not covered by the license above):
-
-- PhotoCraft engine (photocraft-cli): Copyright (c) 2026 ArtCraft Team and the
-  PhotoCraft contributors, dual-licensed under MIT OR Apache-2.0. EasyWalp uses
-  it as an external binary; its license texts ship in assets/photocraft/ and in
-  the About dialog of the app.
-- Vazirmatn font: Copyright (c) The Vazirmatn Project Authors, SIL Open Font
-  License 1.1 (assets/fonts/OFL-Vazirmatn.txt).
+See THIRD_PARTY_NOTICES for details. These components remain under their own
+licenses; nothing in this file limits the end users' rights granted by those
+licenses for the components themselves.
