@@ -16,27 +16,27 @@ git remote add origin https://github.com/ArsalanAfshar/<repo>.git
 git push -u origin main
 ```
 
-## One-time: install the CI workflow (one file)
+## The CI workflow (already installed)
 
-The workflow file ships in `ops/workflows/easywalp-ci.yml` because GitHub
-rejects workflow files pushed by some app integrations. Do ONE of these:
+The workflow lives at `.github/workflows/easywalp-ci.yml` and is part of the
+repository - there is nothing to install. It runs
 
-**Option A — on your own machine (recommended):**
-```bash
-python scripts/install_workflows.py
-git add .github/workflows && git commit -m "Install EasyWalp CI" && git push
-```
+- on **every push** to any branch: the test suite (Linux + Windows, offscreen Qt
+  and the Kivy UI under xvfb) and the pinned engine cross-builds;
+- on a **manual run** (**Actions** → **EasyWalp CI** → **Run workflow**) or a
+  `v*` **tag**: the pinned engine, the Windows app + installer, the Android APK
+  and the release.
 
-**Option B — on github.com (no tools needed):** open the repo → **Add file →
-Create new file** → name it `.github/workflows/easywalp-ci.yml` → paste the
-content of `ops/workflows/easywalp-ci.yml` → **Commit changes**.
-(The raw file is at
-`https://github.com/ArsalanAfshar/EasyWalp-Final/blob/main/ops/workflows/easywalp-ci.yml`.)
+Keep that file as the single source of truth: when you change the workflow, push
+it like any other file.
 
 ## Publish a release (Option 1: click "Run workflow" — no tag needed)
 
 1. GitHub → **Actions** tab → **EasyWalp CI** → **Run workflow** →
    type the version, e.g. `0.1.0` → **Run workflow**.
+   Optional: set *android_abis* to `arm64-v8a,x86` (or `x86`) and tick
+   *android_emulator* to also install the APK on an emulator and run the
+   on-device self-test (engine, PSD analysis, 2K/4K generation, gallery export).
 2. The pipeline builds the pinned PhotoCraft engine, the app, the installer,
    creates the `v0.1.0` tag itself and publishes the release when green.
 
@@ -57,9 +57,14 @@ content of `ops/workflows/easywalp-ci.yml` → **Commit changes**.
    installer, then publishes to Releases:
    - `EasyWalp-Setup-1.2.3-windows.zip` (installer + portable app)
    - `EasyWalp-Setup-1.2.3.exe`
+   - `EasyWalp-1.2.3-arm64-v8a.apk` (the Android app, engine included)
    - `SHA256SUMS.txt`
-5. Post the zip link in the channel's staff chat. Colleagues: unzip → run the
-   installer → double-click any `.easywalp` preset file they received.
+   A job called **Windows installer smoke test** then installs that very installer
+   on a clean Windows runner, starts the app and checks that it stays up - if it
+   is red, do not post the download.
+5. Post the links in the channel's staff chat. Colleagues: unzip → run the
+   installer → double-click any `.easywalp` preset file they received; for phones,
+   send the `.apk` (sideload, see the README).
 
 ## Versioning
 

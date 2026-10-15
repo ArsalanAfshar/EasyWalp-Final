@@ -79,8 +79,10 @@ class PresetsDialog(QDialog):
         self._edit_buttons = [self.export_btn, rename_btn, dup_btn, del_btn]
         for b in self._edit_buttons:
             b.setEnabled(False)
-        self.reload()
+        # Connect *before* the first fill: `reload()` selects the first row, and that
+        # selection is what enables the edit buttons.
         self.list.currentRowChanged.connect(self._selection_changed)
+        self.reload()
 
     # ------------------------------------------------------------------ data
     def reload(self) -> None:
@@ -91,6 +93,9 @@ class PresetsDialog(QDialog):
             self.list.addItem(item)
         if self.list.count():
             self.list.setCurrentRow(0)
+        # Keep the buttons consistent even when the row did not change (e.g. after
+        # the list is refilled programmatically).
+        self._selection_changed(self.list.currentRow())
 
     def _current(self) -> Preset | None:
         item = self.list.currentItem()

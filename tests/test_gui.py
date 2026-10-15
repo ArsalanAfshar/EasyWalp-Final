@@ -91,7 +91,13 @@ def test_rtl_direction(qapp, data_dir, sample_images, i18n_en):
     win = MainWindow()
     win.apply_language()  # default en -> LTR
     assert win.layoutDirection() == Qt.LayoutDirection.LeftToRight
-    i18n_en.set_language("fa")
+    # The language lives in the settings (that is what the language menu writes);
+    # apply_language() syncs the i18n singleton from it and flips the layout.
+    win.settings.language = "fa"
     win.apply_language()
+    assert i18n_en.is_rtl() is True
     assert win.layoutDirection() == Qt.LayoutDirection.RightToLeft
     assert win.desktop_zone._title.text() == i18n_en.tr("main.desktop")
+    win.settings.language = "en"
+    win.apply_language()
+    assert win.layoutDirection() == Qt.LayoutDirection.LeftToRight

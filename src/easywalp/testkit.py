@@ -19,15 +19,20 @@ CODE_TEXT = "Code:MD-O-C236"
 
 
 def gradient(width: int, height: int, top: tuple, bottom: tuple, label: str) -> Image.Image:
-    """A vertical gradient with a white bar and a text label (deterministic fixture)."""
+    """A vertical gradient with a white bar and a text label (deterministic fixture).
+
+    One `ImageDraw.line` per row: the per-pixel loop this replaces took seconds for a
+    phone-sized wallpaper, and the Android self-test runs it on the device.
+    """
     im = Image.new("RGB", (width, height))
-    px = im.load()
-    for y in range(height):
-        t = y / max(1, height - 1)
-        px_row = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
-        for x in range(width):
-            px[x, y] = px_row
     draw = ImageDraw.Draw(im)
+    last = max(1, height - 1)
+    for y in range(height):
+        t = y / last
+        draw.line(
+            [(0, y), (width, y)],
+            fill=tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)),
+        )
     bar = max(8, height // 25)
     draw.rectangle([0, height - bar, width, height], fill=(255, 255, 255))
     draw.text((18, height - bar + 6), label, fill=(0, 0, 0))

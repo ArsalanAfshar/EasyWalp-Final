@@ -68,13 +68,46 @@ file is infected. Options:
   3. Submit a false-positive report to Microsoft/VirusTotal if a scanner
      wrongly flags the file.
 
+## Android app (same pipeline, on a phone)
+
+`EasyWalp-<version>-arm64-v8a.apk` (from [Releases](../../releases)) is the
+Android build: the very same engine and core, with a Kivy UI instead of Qt.
+
+1. Copy the APK to the phone and open it (allow *Install unknown apps* for the
+   app you open it with — the APK is debug-signed, see below).
+2. Pick the desktop + mobile wallpapers (system file picker), choose the preset,
+   the category, the resolution and the number, then **Generate**.
+3. **Save to gallery** copies the three JPGs into
+   `Pictures/EasyWalp/<folder>` (MediaStore, so any gallery app sees them);
+   **Share** sends them through the Android share sheet (Telegram, WhatsApp…) or
+   copies the code as text.
+
+Everything the desktop version does is done on the device: cover-cropped 2K/4K
+JPGs, the PhotoCraft-rendered mockup, the code and folder naming, and the
+`.easywalp` preset packages (export/import through the system picker).
+
+Notes:
+
+- The APK ships the PhotoCraft engine as `lib/arm64-v8a/libphotocraft_cli.so`
+  (Android only lets an app *execute* files in its native-library directory) and
+  copies the bundled Vazirmatn fonts into the app data dir, which is also where
+  the engine looks for `$XDG_DATA_HOME/fonts`.
+- MinAndroid 7.0 (API 24), portrait, ~xx MB per ABI. The release build is
+  `debug`-signed with the standard Android debug key, which is all a sideloaded
+  app needs; a Play Store upload would need a real keystore.
+- Every release is validated on an emulator: the `android-selftest` job installs
+  the APK, pushes a self-test request into the app's own external files dir and
+  the app then runs the engine, builds a PSD, analyses it, generates 2K + 4K
+  packages and exports to the gallery, writing `selftest/result.json` back.
+  `adb logcat -s python.stdout:V` shows the same report live.
+
 ## Build from source
 
 Requirements: Windows 10/11, Python 3.11+, and a `photocraft-cli.exe` built
-from the commit pinned in `config/photocraft-pin.json`. Easiest: run the
-**"PhotoCraft binaries"** workflow once (after `python scripts/install_workflows.py`),
-then `python scripts/fetch_engine.py` puts it into `%APPDATA%\EasyWalp\engines\`
-where both the app and the spike scripts find it.
+from the commit pinned in `config/photocraft-pin.json`. Easiest: the CI stages
+prebuilt binaries on the `photocraft-bin` branch (see *Builds* below), so
+`python scripts/fetch_engine.py` downloads the right one into
+`%APPDATA%\EasyWalp\engines\`, where both the app and the spike scripts find it.
 
 ```bat
 py -3.11 -m venv .venv && .venv\Scripts\activate
@@ -85,14 +118,26 @@ python -m easywalp gui             &REM the app
 python -m easywalp --preset "My PSD" --desktop a.png --mobile b.png --category O --number 236 --res 2k --out D:\Out
 ```
 
-Full installer + release build is automated with **one workflow file**
-(`ops/workflows/easywalp-ci.yml` — GitHub rejects workflow files pushed by app
-integrations, so install it once via `python scripts/install_workflows.py`, or
-paste it into `.github/workflows/easywalp-ci.yml` on github.com). Then either
-push a tag `v1.2.3` or click **Actions → EasyWalp CI → Run workflow** with the
-version — GitHub Actions builds the pinned `photocraft-cli`, the PyInstaller app
-and the Inno Setup installer, and publishes `EasyWalp-Setup-1.2.3-windows.zip`
-with SHA256 checksums to Releases.
+Everything ships from **one workflow file**
+([`.github/workflows/easywalp-ci.yml`](.github/workflows/easywalp-ci.yml)):
+every branch push runs the test suite (Linux + Windows, offscreen Qt, the Kivy UI
+under xvfb) and cross-compiles the pinned engine; a tag `v1.2.3` (or
+**Actions → EasyWalp CI → Run workflow** with the version) builds the pinned
+`photocraft-cli`, the PyInstaller app, the Inno Setup installer *and* the Android
+APK, then publishes `EasyWalp-Setup-1.2.3-windows.zip`,
+`EasyWalp-Setup-1.2.3.exe`, `EasyWalp-1.2.3-arm64-v8a.apk` and
+`SHA256SUMS.txt` to Releases. A final job (**Windows installer smoke test**)
+installs that very installer on a clean Windows runner, starts the app and checks
+that it stays up; ask for the Android emulator validation on a manual run by
+ticking *android_emulator* and setting *android_abis* to `x86`.
+
+Downloads land on the [Releases](../../releases) page - direct links:
+
+```
+https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.0-windows.zip
+https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.0.exe
+https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-0.1.0-arm64-v8a.apk
+```
 Step-by-step for non-developers: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 ## Feasibility spike (PhotoCraft proof)
@@ -108,11 +153,13 @@ save, 2K vs 4K preview identity, timings and engine memory. See
 
 ```
 src/easywalp/        core pipeline (GUI-free) + PySide6 app in app/
+android/             Kivy app (main.py, easywalp_android/) + buildozer.spec
 i18n/                en.json / fa.json  (runtime-switchable, RTL)
 assets/              logo, icons, fonts (Vazirmatn, OFL), PhotoCraft licenses
 packaging/windows/   PyInstaller spec + Inno Setup script (+ Farsi.isl)
-scripts/             icon generation, spike, release helpers
-tests/               pytest suite
+scripts/             icon generation, spike, release helpers, CI log publishing
+scripts/android/     prepares the buildozer build folder + reads self-test reports
+tests/               pytest suite (core, Qt GUI flows, Android core + Kivy UI)
 config/              photocraft-pin.json (exact engine commit, reproducible builds)
 ```
 
@@ -129,6 +176,14 @@ config/              photocraft-pin.json (exact engine commit, reproducible buil
 ---
 
 # راهنمای فارسی
+
+> **لینک‌های دانلود** (همیشه در صفحهٔ [Releases](../../releases) هم هستند):
+>
+> ```
+> https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.0-windows.zip
+> https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.0.exe
+> https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-0.1.0-arm64-v8a.apk
+> ```
 
 **EasyWalp** تولید خودکار پکیج والپیپر برای کانال والیفای است: دو والپیپر
 (دسکتاپ ۱۶:۹ و موبایل ۹:۱۶) + یک تصویر پیش‌نمایش ماکاپ که با موتور متن‌باز
@@ -169,6 +224,36 @@ config/              photocraft-pin.json (exact engine commit, reproducible buil
 `SHA256SUMS.txt` بررسی کنید یا «More info → Run anyway» را بزنید. راه‌حل
 بلندمدت: ثبت‌نام رایگان در **SignPath.io** برای پروژه‌های متن‌باز یا خرید
 گواهی امضا (توضیح کامل در بخش انگلیسی).
+
+## اپ اندروید (همان موتور، روی گوشی)
+
+فایل `EasyWalp-<version>-arm64-v8a.apk` از بخش [Releases](../../releases) نسخهٔ
+اندروید است: همان موتور PhotoCraft و همان منطق تولید، با رابط کاربری Kivy.
+
+۱. فایل APK را روی گوشی باز کنید (اجازهٔ *نصب از منابع ناشناس* را برای برنامهای
+   که فایل را باز می‌کند بدهید؛ APK با کلید دیباگ امضا شده است).
+۲. والپیپر دسکتاپ و موبایل را انتخاب کنید (از فایل‌منیجر سیستم)، پریست، دسته،
+   رزولوشن و شماره را انتخاب کنید و **تولید** را بزنید.
+۳. **ذخیره در گالری** سه فایل JPG را در مسیر `Pictures/EasyWalp/<folder>`
+   می‌گذارد (با MediaStore، پس همهٔ گالری‌ها آن را می‌بینند)؛ **اشتراک‌گذاری**
+   آن‌ها را با تلگرام/واتس‌اپ و… می‌فرستد یا کد تولیدشده را کپی می‌کند.
+
+همه‌چیز روی گوشی انجام می‌شود: والپیپرهای ۲K/۴K با برش و تغییر اندازهٔ دقیق،
+رندر ماکاپ با PhotoCraft، نام‌گذاری کد و پوشه‌ها، و پکیج‌های `.easywalp`
+(خروجی/ورودی از طریق انتخاب‌گر فایل سیستم).
+
+نکته‌ها:
+
+- موتور به‌صورت `lib/arm64-v8a/libphotocraft_cli.so` داخل APK است (اندروید فقط
+  فایل‌های داخل پوشهٔ کتابخانهٔ بومی را قابل‌اجرا می‌کند) و فونت‌های وزیرمتن در
+  پوشهٔ دادهٔ برنامه کپی می‌شوند؛ همان جایی که موتور در `$XDG_DATA_HOME/fonts`
+  دنبال فونت می‌گردد.
+- حداقل اندروید ۷ (API 24). نسخهٔ منتشرشده با کلید دیباگ امضا شده؛ برای انتشار
+  در گوگل‌پلی باید کی‌استور واقعی ساخته شود.
+- هر نسخه روی امولاتور تست می‌شود: کار `android-selftest` اپ را نصب می‌کند،
+  درخواست تست را در پوشهٔ فایل‌های خود اپ می‌گذارد و اپ موتور را اجرا می‌کند،
+  یک PSD می‌سازد، تحلیل می‌کند، ۲K و ۴K تولید می‌کند و در گالری ذخیره می‌کند و
+  گزارش را در `selftest/result.json` می‌نویسد.
 
 ## ساخت از سورس
 

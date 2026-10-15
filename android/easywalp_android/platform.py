@@ -98,6 +98,11 @@ def prepare_engine_env() -> Path | None:
     lib_dir = native_library_dir()
     if lib_dir:
         os.environ["EASYWALP_ENGINE_DIR"] = str(lib_dir)
+        # The engine is a normal ELF binary: when it is exec'd straight out of the
+        # app's native library dir the linker must be able to find the NDK's
+        # libc++_shared.so next to it (same directory, so this is only insurance).
+        existing = os.environ.get("LD_LIBRARY_PATH", "")
+        os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{existing}" if existing else str(lib_dir)
         candidate = lib_dir / ENGINE_LIB_NAME
         if candidate.is_file():
             os.environ["EASYWALP_ENGINE"] = str(candidate)

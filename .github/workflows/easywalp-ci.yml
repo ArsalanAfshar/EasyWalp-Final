@@ -35,7 +35,9 @@ permissions:
   checks: write      # CI logs are republished as check-run annotations (see below)
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A branch push, a tag push and a manual release are independent: they only share
+  # the caches, not the queue (this is a public repo, so minutes are free).
+  group: ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 env:
@@ -274,9 +276,16 @@ jobs:
   # native-library directory (the only place Android lets an app exec() from) can run it.
   engine-android:
     name: Build photocraft-cli (pinned, android)
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'branch')
+    # runs for tags too: the APK is part of every release
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      # Escape hatch: extra `cargo build` flags for the cross-build. cargo-ndk's
+      # library mode has a quirk around multi-target builds (it can stop after
+      # "No usable artifacts produced by cargo"), so the two ABI builds are driven
+      # one target at a time below - see "Bundle the engine libraries the APK needs".
+      CARGO_NDK_EXTRA_BUILD_ARGS: ""
     steps:
       - name: Checkout EasyWalp
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -348,8 +357,48 @@ jobs:
           tail -80 android-build.log
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
+      # Android can only *execute* a file that is a native library, so the engine
+      # ships as lib/<abi>/libphotocraft_cli.so. cargo-ndk copies the binaries it
+      # produced itself; when its library mode gives up ("No usable artifacts
+      # produced by cargo", which happens on multi-target runs) the binaries are
+      # still in target/<triple>/release - this step puts them where they belong.
+      - name: Bundle the engine libraries the APK needs
+        id: libs
+        if: steps.build.outputs.status == '0'
+        shell: bash
+        run: |
+          set -e
+          NDK="$ANDROID_NDK_HOME"
+          LLVM=$(find "$NDK" -name llvm-readelf -type f -print -quit | xargs -r dirname)
+          [ -n "$LLVM" ] || echo "::warning::llvm-readelf not found; skipping the ELF report"
+          for pair in "arm64-v8a:aarch64-linux-android" "x86:i686-linux-android"; do
+            ABI="${pair%%:*}"; TRIPLE="${pair##*:}"
+            SO="engines-android/$ABI/libphotocraft_cli.so"
+            if [ ! -f "$SO" ]; then
+              mkdir -p "engines-android/$ABI"
+              cp "../photocraft-src/target/$TRIPLE/release/photocraft-cli" "$SO"
+              echo "cargo-ndk left $ABI behind; copied it from target/$TRIPLE/release"
+            fi
+            chmod 755 "$SO"
+            echo "--- $ABI ($(stat -c%s "$SO") bytes)"
+            file "$SO"
+            if [ -n "$LLVM" ]; then
+              "$LLVM/llvm-readelf" -d "$SO" | grep -E "NEEDED|SONAME|RUNPATH|RPATH" || true
+              # The NDK's C++ runtime is a *shared* library and the engine links it
+              # by its bare soname: Android's linker does not search $ORIGIN, so the
+              # copy has to sit in the very same directory and the RPATH must be
+              # absolute (it already points at the app's nativeLibraryDir).
+              if "$LLVM/llvm-readelf" -d "$SO" | grep -q "libc++_shared.so"; then
+                cp "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$TRIPLE/libc++_shared.so" \
+                   "engines-android/$ABI/libc++_shared.so"
+                echo "bundled libc++_shared.so next to the $ABI engine"
+              fi
+            fi
+          done
+          find engines-android -type f -exec ls -l {} + | sort -k9
+
       - name: Publish the build log
-        if: steps.build.outputs.status != '0'
+        if: steps.build.outputs.status != '0' || steps.libs.outcome == 'failure'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -358,19 +407,9 @@ jobs:
             --job-name "Build photocraft-cli (pinned, android)" --title "android engine build" || true
 
       - name: Fail if the cross-compile failed
-        if: steps.build.outputs.status != '0'
+        if: steps.build.outputs.status != '0' || steps.libs.outcome == 'failure'
         shell: bash
         run: exit 1
-
-      - name: Inspect the result
-        shell: bash
-        run: |
-          find engines-android -type f -exec ls -l {} + | sort -k9
-          for so in $(find engines-android -name '*.so'); do
-            echo "--- $so"
-            file "$so"
-            readelf -d "$so" | grep -E "NEEDED|SONAME" || true
-          done
 
       - name: Upload the Android engine
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -384,7 +423,8 @@ jobs:
   apk:
     name: Build the Android APK
     needs: [engine-android]
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'branch')
+    # runs for tags too, where the last step attaches the APK to the release
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -628,6 +668,97 @@ jobs:
           python scripts/ci/publish_log.py --file device-selftest.log \
             --job-name "On-device self-test (Android emulator)" --title "android self-test" || true
           python scripts/android/selftest_report.py selftest-result.json
+
+  # ------------------------------------------------ windows installer smoke test
+  # Installs the *shipped* installer on a clean Windows runner - silent install,
+  # then start the installed app, read its version back and check that the window
+  # stays up. This is what proves "the Windows download runs", the same way
+  # `android-selftest` proves it for the APK (the old build-time smoke test only
+  # checked the build tree, not what the channel team actually downloads).
+  ci:
+    name: Windows installer smoke test
+    needs: [release-app]
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Download the release package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-${{ github.run_id }}
+          path: release
+
+      - name: Install it like a user would
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+          $log = "install-smoke.log"
+          function Say($m) { $m | Tee-Object -FilePath $log -Append | Out-Host }
+
+          "== release artefacts ==" | Set-Content $log
+          Get-ChildItem -Recurse release | Where-Object { -not $_.PSIsContainer } |
+            ForEach-Object { Say ("{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+
+          $zip = Get-ChildItem -Recurse release -Filter *.zip | Select-Object -First 1
+          if (-not $zip) { Say "::error::no installer zip in the release artefacts"; exit 1 }
+          Expand-Archive -Path $zip.FullName -DestinationPath unpacked -Force
+          $setup = Get-ChildItem -Recurse unpacked -Filter "EasyWalp-Setup-*.exe" | Select-Object -First 1
+          if (-not $setup) { Say "::error::no EasyWalp-Setup-*.exe inside $($zip.Name)"; exit 1 }
+          Say "installer: $($setup.FullName) ($([math]::Round($setup.Length / 1MB, 1)) MB)"
+
+          Say "== silent install =="
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait -PassThru
+          Say "installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { Say "::error::the installer failed with exit code $($p.ExitCode)"; exit 1 }
+
+          $exe = Get-ChildItem -Recurse "$env:LOCALAPPDATA\Programs" -Filter EasyWalp.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Recurse "$env:ProgramFiles" -Filter EasyWalp.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $exe) {
+            Say "::error::the installer did not create EasyWalp.exe"
+            Get-ChildItem -Recurse "$env:LOCALAPPDATA\Programs" -ErrorAction SilentlyContinue |
+              Select-Object -First 40 | ForEach-Object { Say $_.FullName }
+            exit 1
+          }
+          Say "installed: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 1)) MB)"
+          Get-ChildItem $exe.DirectoryName | ForEach-Object { Say ("  " + $_.Name) }
+
+          Say "== the app answers --version =="
+          $version = (& $exe.FullName --version 2>&1 | Out-String).Trim()
+          Say "EasyWalp.exe --version -> $version"
+          if ($version -notmatch "EasyWalp \d") { Say "::error::the installed app could not report its version"; exit 1 }
+
+          $engine = Get-ChildItem -Recurse $exe.DirectoryName -Filter photocraft-cli.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($engine) {
+            $ev = (& $engine.FullName --version 2>&1 | Out-String).Trim()
+            Say "engine: $($engine.FullName) -> $ev"
+          } else {
+            Say "::warning::no photocraft-cli.exe shipped next to the app"
+          }
+
+          Say "== starting the GUI =="
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 20
+          if ($proc.HasExited) {
+            Say "::error::the GUI exited during startup with code $($proc.ExitCode)"
+            Get-ChildItem -Recurse "$env:APPDATA\EasyWalp" -Filter *.log -ErrorAction SilentlyContinue |
+              ForEach-Object { Say "--- $($_.FullName)"; Get-Content $_.FullName -Tail 40 | ForEach-Object { Say $_ } }
+            exit 1
+          }
+          Say "the GUI stayed up for 20 s - stopping it"
+          $proc.Kill()
+          Say "OK"
+          exit 0
+
+      - name: Publish the smoke log
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/publish_log.py --file install-smoke.log \
+            --job-name "Windows installer smoke test" --title "windows installer smoke" || true
 
   # ------------------------------------------------------------- release
   release-engine:
