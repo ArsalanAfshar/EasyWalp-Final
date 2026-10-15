@@ -1092,9 +1092,11 @@ jobs:
             if ($proc.ExitCode -ne 0) { throw "$label failed its self-check with exit $($proc.ExitCode)" }
           }
           Test-EasyWalp "dist/EasyWalp/EasyWalp.exe" "onedir"
-          $portable = "dist/EasyWalp-Portable/EasyWalp-Portable.exe"
-          if (Test-Path $portable) {
-            Test-EasyWalp $portable "portable"
+          # Onefile output is a single file directly under dist/, not a folder.
+          $portable = Get-ChildItem -Path dist -Filter "EasyWalp-Portable*.exe" -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+          if ($portable) {
+            Test-EasyWalp $portable.FullName "portable"
           } else {
             Write-Host "::warning::no single-file build to self-check"
           }
@@ -1122,7 +1124,7 @@ jobs:
           python scripts/release/package_release.py `
             --version ${{ steps.ver.outputs.version }} `
             --installer "installer-out/EasyWalp-Setup-${{ steps.ver.outputs.version }}.exe" `
-            --portable "dist/EasyWalp-Portable/EasyWalp-Portable.exe" `
+            --portable "dist/EasyWalp-Portable.exe" `
             --dist dist/EasyWalp
 
       - name: Upload release artefacts

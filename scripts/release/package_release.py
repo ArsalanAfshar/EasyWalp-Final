@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--installer", type=Path, required=True, help="the built installer .exe")
     parser.add_argument("--dist", type=Path, default=ROOT / "dist" / "EasyWalp",
                         help="the PyInstaller onedir output (default: dist/EasyWalp)")
-    parser.add_argument("--portable", type=Path, default=ROOT / "dist" / "EasyWalp-Portable" / "EasyWalp-Portable.exe",
+    parser.add_argument("--portable", type=Path, default=ROOT / "dist" / "EasyWalp-Portable.exe",
                         help="the PyInstaller onefile output (optional but recommended)")
     parser.add_argument("--out", type=Path, default=ROOT / "release",
                         help="release folder (default: release/)")
