@@ -17,12 +17,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 API = "https://api.github.com"
+#: ANSI colour codes bloat the text and hide the actual message
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 MAX_ANNOTATION_CHARS = 55_000
 MAX_ANNOTATIONS = 40
 MAX_COMMENT_CHARS = 60_000
@@ -98,11 +101,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"publish_log: {args.file} does not exist - nothing published")
         return 0
 
-    text = args.file.read_text(encoding="utf-8", errors="replace")
+    raw = args.file.read_text(encoding="utf-8", errors="replace")
+    text = ANSI.sub("", raw)
+    total_lines = text.count("\n") + 1
     if len(text) > args.tail:
-        text = "... (truncated)\n" + text[-args.tail:]
+        text = f"... (trimmed to the last {args.tail} characters)\n" + text[-args.tail:]
     title = args.title or args.job_name or "ci"
-    head = f"{title}\n{args.repo} run {args.run_id}\n" + "-" * 60 + "\n"
+    head = (f"{title}\n{args.repo} run {args.run_id} - {total_lines} lines, "
+            f"{len(raw)} bytes\n" + "-" * 60 + "\n")
     text = head + text
 
     if not args.skip_annotations:
@@ -135,9 +141,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.skip_comment and args.sha:
         try:
-            body = text[:MAX_COMMENT_CHARS]
+            # The *end* of a log is where the failure is: keep the tail.
+            body = text
             if len(text) > MAX_COMMENT_CHARS:
-                body += "\n... (truncated)"
+                body = ("... (earlier output trimmed)\n"
+                        + text[-(MAX_COMMENT_CHARS - len("... (earlier output trimmed)\n")):])
             result = call("POST", f"{API}/repos/{args.repo}/commits/{args.sha}/comments", token,
                           {"body": f"**CI log: {title}**\n\n```\n{body}\n```\n"})
             print(f"publish_log: commit comment -> {result.get('html_url', '?')}")

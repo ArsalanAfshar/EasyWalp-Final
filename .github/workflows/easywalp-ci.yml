@@ -539,8 +539,25 @@ jobs:
             buildozer -v android debug
           ) > apk-build.log 2>&1
           STATUS=$?
-          tail -80 apk-build.log
+          echo "=== the last 120 lines ==="
+          tail -120 apk-build.log
+          if [ "$STATUS" != "0" ]; then
+            # The step log is readable through the API even when the file is huge.
+            echo "=== error-ish lines (last 40) ==="
+            grep -n -iE "error|exception|traceback|failed|no such file|cannot find" apk-build.log \
+              | tail -40 || true
+          fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      # A failed build still warms the cache: without this every attempt starts from
+      # zero (the automatic cache post-step does not run for a failed job).
+      - name: Save the python-for-android build
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: android/build/app/.buildozer
+          key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v1
 
       - name: Publish the APK build log
         if: steps.build.outputs.status != '0'

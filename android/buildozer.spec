@@ -66,5 +66,7 @@ android.allow_backup = True
 # per ABI in --abis, so the APK only contains engine binaries that exist.
 
 [buildozer]
-log_level = 2
+# 1: no DEBUG. Level 2 drowns the CI log in Cython "performance hint" lines and
+# pushes the real error out of the published tail.
+log_level = 1
 warn_on_root = 0
