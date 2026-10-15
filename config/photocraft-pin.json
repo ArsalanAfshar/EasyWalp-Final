@@ -1,0 +1,24 @@
+{
+  "$comment": "Pins the exact PhotoCraft engine build that EasyWalp uses. CI builds photocraft-cli from this commit for reproducibility. Bump ref+commit together, and only after re-running the spike (scripts/spike).",
+  "photocraft": {
+    "repo": "storytold/photocraft",
+    "tag": "v0.9.0",
+    "commit": "c699e3cda69f4852b43c0b191ab0091aaeff9d6a",
+    "cli_package": "photocraft-cli",
+    "craft_fonts_repo": "storytold/craft-fonts",
+    "craft_fonts_ref": "abb83316d96aa59c1cf64784289e378fe9fa5695",
+    "license": "MIT OR Apache-2.0",
+    "pinned_on": "2026-10-15",
+    "verified_features": [
+      "info --compact",
+      "run --cmd --params --out",
+      "serve (stdio JSON lines)",
+      "commands --json --filter",
+      "layer.smartObjects.replaceContents",
+      "layer.smartObjects.exportContents",
+      "layer.fill.solidColor.set",
+      "type.edit ranged replace",
+      "type.info"
+    ]
+  }
+}

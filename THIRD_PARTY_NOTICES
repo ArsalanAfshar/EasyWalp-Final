@@ -1,0 +1,31 @@
+THIRD-PARTY NOTICES for EasyWalp
+================================
+
+EasyWalp embeds/uses the following third-party components. Each keeps its own
+license; full texts ship beside this file or inside the installed app.
+
+1) PhotoCraft engine (headless CLI `photocraft-cli`)
+   - Source: https://github.com/storytold/photocraft
+   - License: MIT OR Apache-2.0 (see assets/photocraft/LICENSE-MIT.txt and
+     assets/photocraft/LICENSE-APACHE.txt; NOTICE in assets/photocraft/NOTICE.txt)
+   - Used for: opening/editing the mockup PSD, smart-object content replacement,
+     solid-fill color, ranged text edit, and the flat preview JPG render.
+   - EasyWalp is not affiliated with PhotoCraft or ArtCraft; their names and
+     logos are their trademarks. Credit line required by us: "Powered by
+     PhotoCraft engine".
+
+2) Vazirmatn font
+   - Source: https://github.com/rastikerdar/vazirmatn
+   - License: SIL Open Font License 1.1 (assets/fonts/OFL-Vazirmatn.txt)
+   - Used for: the app UI (Persian/English).
+
+3) Python side libraries (installed via requirements.txt; licenses recorded by
+   PyPI metadata):
+   - Pillow (HPND-CMU / MIT-CMU) - wallpaper resizing, thumbnails, average color.
+   - PySide6 (LGPL-3.0) - the desktop GUI. Dynamic linking via standard import;
+     users may replace/upgrade Qt. Qt sources: https://qt.io/
+   - pytest (MIT, dev only).
+
+PhotoCraft's own bundled third-party material (fonts, icons, dictionaries) is
+listed in assets/photocraft/THIRD_PARTY_NOTICES.txt (upstream ATTRIBUTION.md)
+and remains under its own licenses.
