@@ -468,6 +468,9 @@ jobs:
           ABIS="${{ inputs.android_abis }}"
           [ -n "$ABIS" ] || ABIS="arm64-v8a"
           echo "EasyWalp $V for $ABIS"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "abis=$ABIS" >> "$GITHUB_OUTPUT"
+          echo "safe=$(echo "$ABIS" | tr ',' '-')" >> "$GITHUB_OUTPUT"
 
       - name: Locate the Android SDK and NDK
         id: sdk
