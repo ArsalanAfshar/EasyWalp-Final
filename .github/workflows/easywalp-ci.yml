@@ -24,6 +24,11 @@ on:
         description: "Android ABIs for the APK (arm64-v8a, arm64-v8a,x86, ...)"
         required: false
         default: "arm64-v8a"
+      android_emulator:
+        description: "Also run the on-device self-test on an Android emulator (needs x86 in android_abis)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write    # releases, tags, the photocraft-bin branch
@@ -305,7 +310,7 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
-          rustup target add aarch64-linux-android x86_64-linux-android
+          rustup target add aarch64-linux-android i686-linux-android
           rustc --version && cargo --version
 
       - name: Install cargo-ndk
@@ -336,7 +341,7 @@ jobs:
           set +e
           (
             cd ../photocraft-src
-            cargo ndk -t arm64-v8a -t x86_64 -o "$GITHUB_WORKSPACE/engines-android" \
+            cargo ndk -t arm64-v8a -t x86 -o "$GITHUB_WORKSPACE/engines-android" \
               build --release --locked -p photocraft-cli
           ) > android-build.log 2>&1
           STATUS=$?
@@ -546,6 +551,83 @@ jobs:
           done
           echo "::error::could not attach the APK to $TAG"
           exit 1
+
+  # ------------------------------------------------------- on-device self-test
+  # Installs the x86 APK on an emulator, pushes a self-test request into the app's
+  # external files dir, launches the app and pulls the report back. This is proof
+  # that the APK runs: engine, Pillow, PSD editing and the whole generate pipeline,
+  # on a real Android runtime rather than on the desktop interpreter.
+  android-selftest:
+    name: On-device self-test (Android emulator)
+    needs: [apk]
+    if: github.event_name == 'workflow_dispatch' && inputs.android_emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download the APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: easywalp-apk-${{ inputs.version }}-${{ inputs.android_abis }}
+          path: apk
+
+      - name: Boot an emulator and run the self-test
+        id: device
+        shell: bash
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          PACKAGE: org.wallify.easywalp
+        run: |
+          set +e
+          (
+            set -e
+            SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+            export PATH="$SDK/platform-tools:$SDK/emulator:$SDK/cmdline-tools/latest/bin:$PATH"
+            test -w /dev/kvm && echo "KVM available" || echo "::warning::no /dev/kvm - the emulator will be slow"
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager --install "platform-tools" "emulator" "system-images;android-30;google_apis;x86" > /dev/null
+            echo no | avdmanager create avd -n easywalp -k "system-images;android-30;google_apis;x86" --device "pixel_4" --force
+            emulator -avd easywalp -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel auto &
+            adb wait-for-device
+            for i in $(seq 1 60); do
+              if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then break; fi
+              sleep 10
+            done
+            adb shell getprop sys.boot_completed
+            APK=$(ls apk/*.apk | head -1)
+            echo "installing $APK"
+            adb install -r -t "$APK"
+            adb shell pm list packages | grep wallify
+            adb shell mkdir -p /sdcard/Android/data/$PACKAGE/files/selftest
+            adb shell "echo '{\"engine\": true, \"pipeline\": true, \"export\": true}' > /sdcard/Android/data/$PACKAGE/files/selftest/request.json"
+            adb shell cat /sdcard/Android/data/$PACKAGE/files/selftest/request.json
+            adb shell monkey -p $PACKAGE -c android.intent.category.LAUNCHER 1
+            echo "--- waiting for the report ---"
+            for i in $(seq 1 60); do
+              if adb shell "test -f /sdcard/Android/data/$PACKAGE/files/selftest/result.json" 2>/dev/null; then break; fi
+              sleep 10
+            done
+            adb shell cat /sdcard/Android/data/$PACKAGE/files/selftest/result.txt || true
+            adb pull /sdcard/Android/data/$PACKAGE/files/selftest/result.json selftest-result.json || true
+            adb shell ls -R /sdcard/Android/data/$PACKAGE/files/selftest || true
+            adb logcat -d -s python.stdout:V python.stderr:V EasyWalp:V | tail -60 || true
+            test -f selftest-result.json
+          ) > device-selftest.log 2>&1
+          STATUS=$?
+          tail -80 device-selftest.log
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Report the self-test
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/publish_log.py --file device-selftest.log \
+            --job-name "On-device self-test (Android emulator)" --title "android self-test" || true
+          python scripts/android/selftest_report.py selftest-result.json
 
   # ------------------------------------------------------------- release
   release-engine:
