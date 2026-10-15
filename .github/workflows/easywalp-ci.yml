@@ -527,6 +527,27 @@ jobs:
           key: p4a-${{ steps.ver.outputs.safe }}-${{ hashFiles('android/buildozer.spec') }}-v1
           restore-keys: p4a-${{ steps.ver.outputs.safe }}-
 
+      # p4a refuses to build when the SDK does not have the platform the spec asks
+      # for ("Requested API target 35 is not available, install it with the SDK
+      # android tool"), and the runner image does not necessarily ship platform 35.
+      - name: Make sure the SDK has the platform the spec asks for
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          API=$(grep -E "^android\.api" android/build/app/buildozer.spec | head -1 | tr -dc '0-9')
+          echo "spec targets API $API in $SDK"
+          if [ -d "$SDK/platforms/android-$API" ]; then
+            echo "platforms;android-$API is already installed"
+          else
+            SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+            [ -x "$SDKMANAGER" ] || SDKMANAGER=$(command -v sdkmanager)
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" "platforms;android-$API" "build-tools;$API.0.0" \
+              || "$SDKMANAGER" "platforms;android-$API"
+            test -d "$SDK/platforms/android-$API" || { echo "::error::platform $API is still missing"; exit 1; }
+          fi
+          ls "$SDK/platforms"
+
       # p4a resolves every recipe-less dependency with `pip install --dry-run
       # --platform=<android>` and then hands the chosen wheels to the *host* pip,
       # which refuses anything that is not tagged for the running platform. Since
