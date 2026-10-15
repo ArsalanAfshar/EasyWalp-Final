@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import sys
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -22,100 +21,12 @@ from easywalp.photocraft import Session
 from easywalp.pipeline import Pipeline
 from easywalp.presets import LayerRef, Preset, TextCodeInfo
 
-FAKE_ENGINE = r"""
-import json, sys, os, struct, zlib
-
-work = os.getcwd()
-state_path = os.path.join(os.environ.get("FAKE_STATE_DIR", work), "calls.json")
-state = {"calls": [], "text": "Code:MD-O-C236"}
-if os.path.exists(state_path):
-    state = json.load(open(state_path))
-
-
-def save_state():
-    json.dump(state, open(state_path, "w"))
-
-
-def png_bytes(size, color=(10, 60, 90)):
-    w, h = size
-    def chunk(typ, data):
-        c = typ + data
-        return struct.pack(">I", len(data)) + c + struct.pack(">I", 0xFFFFFFFF & zlib.crc32(c))
-    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
-    raw = b"".join(b"\x00" + bytes(color) * w for _ in range(h))
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
-
-
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    req = json.loads(line)
-    rid, method, params = req["id"], req.get("method"), req.get("params", {}) or {}
-    ok, result = True, {}
-    if method == "doc.open":
-        pass
-    elif method == "doc.inspect":
-        result = {"width": 2000, "height": 1500, "layers": [
-            {"id": 12, "name": "Desktop Screen", "kind": "Smart Object"},
-            {"id": 15, "name": "Phone Screen", "kind": "Smart Object"},
-            {"id": 3, "name": "BG Color", "kind": "Fill"},
-            {"id": 8, "name": "Code label", "kind": "Type"},
-        ]}
-    elif method == "engine.execute":
-        cmd = params.get("command")
-        p = params.get("params", {})
-        if cmd == "type.info":
-            result = {"text": state["text"], "font": "Vazirmatn", "sizePt": 48}
-        elif cmd == "type.edit":
-            rep = p["replace"]
-            t = state["text"]
-            state["text"] = t[: rep["start"]] + rep["text"] + t[rep["end"]:]
-        elif cmd == "layer.smartObjects.replaceContents":
-            from PIL import Image
-
-            with Image.open(p["path"]) as im:
-                result = {"replaced": p["layer"], "size": [im.width, im.height]}
-        state["calls"].append({"cmd": cmd, "params": p,
-                               **({"size": result.get("size")} if "size" in result else {})})
-    elif method == "doc.save":
-        out = params["path"]
-        with open(out, "wb") as f:
-            f.write(png_bytes((2000, 1500)))
-        result = {"path": out, "warnings": []}
-        state["calls"].append({"cmd": "doc.save", "params": {"quality": params.get("quality")}})
-    else:
-        ok = False
-        result = {"error": "unknown " + str(method)}
-    save_state()
-    reply = {"id": rid, "ok": ok}
-    if ok:
-        reply["result"] = result
-    else:
-        reply["error"] = result.get("error", "fake failure")
-    sys.stdout.write(json.dumps(reply) + "\n")
-    sys.stdout.flush()
-"""
-
+# The fake engine lives in tests/fake_engine.py (shared with the Android tests).
+from fake_engine import FakeBinary, write_fake_engine  # noqa: E402
 
 
 def _shim(tmp_path: Path) -> Path:
-    if sys.platform == "win32":
-        pytest.skip("posix-only fake engine shim")
-    script = tmp_path / "fake_engine.py"
-    script.write_text(FAKE_ENGINE, encoding="utf-8")
-    shim = tmp_path / "photocraft-cli-fake"
-    shim.write_text(f"#!/bin/sh\nexport FAKE_STATE=${{FAKE_STATE_DIR:-$PWD}}/calls.json\nexec {sys.executable} {script} \"$@\"\n", encoding="utf-8")
-    shim.chmod(0o755)
-    return shim
-
-
-class FakeBinary:
-    def __init__(self, path: Path):
-        self.path = path
-
-    def version(self) -> str:
-        return "fake-1.0"
+    return write_fake_engine(tmp_path, name="photocraft-cli-fake")
 
 
 def _preset(data_dir: Path) -> Preset:

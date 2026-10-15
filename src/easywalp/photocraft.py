@@ -44,19 +44,35 @@ class PhotoCraftBinary:
     @staticmethod
     def _discover(explicit: str | Path | None) -> Path | None:
         exe = "photocraft-cli.exe" if os.name == "nt" else "photocraft-cli"
+        # `libphotocraft_cli.so` is the same binary shipped inside the Android APK:
+        # an APK only extracts *native libraries* with execute permission, so the
+        # Buildozer build stores the engine under that name.
+        names = (exe, "libphotocraft_cli.so")
         candidates: list[Path] = []
         if explicit:
             candidates.append(Path(explicit))
-        candidates.append(paths.engines_dir() / exe)
+        override = paths.engine_override()
+        if override:
+            candidates.append(override)
+        for name in names:
+            candidates.append(paths.engines_dir() / name)
         # Versioned folder produced by CI/installer: engines/v0.9.0/photocraft-cli(.exe)
-        try:
-            for child in sorted(paths.engines_dir().glob("**/" + exe), reverse=True):
-                candidates.append(child)
-        except OSError:
-            pass
+        for name in names:
+            try:
+                candidates.extend(sorted(paths.engines_dir().glob("**/" + name), reverse=True))
+            except OSError:
+                pass
         bundled = paths.bundled_dir()
-        candidates.append(bundled / "photocraft" / exe)
-        candidates.append(bundled / exe)
+        for name in names:
+            candidates.append(bundled / "photocraft" / name)
+            candidates.append(bundled / name)
+        # Android: the extracted native libraries live in ApplicationInfo.nativeLibraryDir,
+        # which the launcher passes down (see easywalp_android/platform.py).
+        for env_name in ("EASYWALP_ENGINE_DIR",):
+            directory = os.getenv(env_name)
+            if directory:
+                for name in names:
+                    candidates.append(Path(directory) / name)
         path_env = shutil.which("photocraft-cli")
         if path_env:
             candidates.append(Path(path_env))
@@ -203,6 +219,9 @@ def _child_env() -> dict:
     env = os.environ.copy()
     # Headless insurance: the CLI is pure CPU; no GPU/window stack is needed.
     env.setdefault("RUST_LOG", "warn,photocraft=info")
+    # Platform specifics (Android: HOME/XDG_DATA_HOME/TMPDIR inside the app sandbox
+    # so the engine finds the bundled fonts and writes no scratch files outside it).
+    env.update(paths.engine_env_overrides())
     return env
 
 

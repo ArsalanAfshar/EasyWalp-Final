@@ -22,7 +22,12 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PIL import Image, ImageCms
+try:  # Pillow's ImageCms needs lcms2, which the Android build does not ship
+    from PIL import ImageCms
+except ImportError:  # pragma: no cover - Android / minimal Pillow builds
+    ImageCms = None  # type: ignore[assignment]
+
+from PIL import Image
 
 from . import paths, presets as presets_mod
 from .config import RESOLUTIONS, GenerateOptions, Resolution, AVG_COLOR_SAMPLE_SIZE
@@ -41,13 +46,26 @@ _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 ASPECT_TOLERANCE = 0.005
 
 _SRGB_PROFILE_BYTES: bytes | None = None
+_SRGB_LOOKED_UP = False
 
 
-def srgb_profile_bytes() -> bytes:
-    """A minimal sRGB ICC profile embedded into exported wallpapers."""
-    global _SRGB_PROFILE_BYTES
-    if _SRGB_PROFILE_BYTES is None:
-        _SRGB_PROFILE_BYTES = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+def srgb_profile_bytes() -> bytes | None:
+    """A minimal sRGB ICC profile for exported wallpapers, or None if unavailable.
+
+    Pillow without lcms2 (the Android build) cannot create the profile; the JPGs
+    are still sRGB, they simply carry no embedded profile - exactly like every
+    file exported by a stock camera app.
+    """
+    global _SRGB_PROFILE_BYTES, _SRGB_LOOKED_UP
+    if not _SRGB_LOOKED_UP:
+        _SRGB_LOOKED_UP = True
+        if ImageCms is not None:
+            try:
+                _SRGB_PROFILE_BYTES = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+            except Exception as e:  # pragma: no cover - exotic Pillow builds
+                log.warning("sRGB profile unavailable (%s); exporting without an ICC profile", e)
+        else:
+            log.info("Pillow has no ImageCms; exporting without an ICC profile")
     return _SRGB_PROFILE_BYTES
 
 
@@ -181,14 +199,16 @@ def cover_resize(im: Image.Image, width: int, height: int) -> Image.Image:
 def save_wallpaper_jpg(im: Image.Image, dest: Path) -> None:
     """JPG quality 95, 4:4:4 (subsampling=0), sRGB."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    im.convert("RGB").save(
-        dest,
-        format="JPEG",
-        quality=95,
-        subsampling=0,
-        optimize=True,
-        icc_profile=srgb_profile_bytes(),
-    )
+    save_kwargs = {
+        "format": "JPEG",
+        "quality": 95,
+        "subsampling": 0,
+        "optimize": True,
+    }
+    profile = srgb_profile_bytes()
+    if profile:
+        save_kwargs["icc_profile"] = profile
+    im.convert("RGB").save(dest, **save_kwargs)
 
 
 def resize_wallpaper(src: Path, dest: Path, target: tuple[int, int]) -> Image.Image:

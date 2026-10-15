@@ -22,7 +22,8 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: write    # releases, tags, the photocraft-bin branch
+  checks: write      # CI logs are republished as check-run annotations (see below)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -65,9 +66,68 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests (offscreen)
+        id: pytests
+        shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q
+        run: |
+          set +e
+          python -m pytest -q -rs > pytest-output.txt 2>&1
+          STATUS=$?
+          tail -60 pytest-output.txt
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      # The raw job log lives on a signed Azure URL that is not reachable from every
+      # environment, so failures are republished as check-run annotations + a commit
+      # comment -> `gh api repos/<repo>/check-runs/<id>/annotations`.
+      - name: Publish the pytest log
+        if: steps.pytests.outputs.status != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/publish_log.py --file pytest-output.txt \
+            --job-name "pytest (${{ matrix.os }})" --title "pytest (${{ matrix.os }})" || true
+
+      - name: Fail if the tests failed
+        if: steps.pytests.outputs.status != '0'
+        shell: bash
+        run: |
+          echo "::error::pytest exited with ${{ steps.pytests.outputs.status }}"
+          exit 1
+
+      # The Android/Kivy screens need a real GL context, so they get their own run
+      # on a virtual X server with Mesa's software renderer.
+      - name: Run the Android UI tests (xvfb + software GL)
+        id: kivyui
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set +e
+          (
+            sudo apt-get install -y xvfb libsdl2-2.0-0 libgl1-mesa-dri libglx-mesa0 libxkbcommon-x11-0
+            pip install kivy==2.3.1 arabic-reshaper python-bidi
+            xvfb-run -a python -m pytest -q -rs tests/test_android_ui.py
+          ) > kivy-output.txt 2>&1
+          STATUS=$?
+          tail -60 kivy-output.txt
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the Android UI log
+        if: runner.os == 'Linux' && steps.kivyui.outputs.status != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/publish_log.py --file kivy-output.txt \
+            --job-name "pytest (${{ matrix.os }})" --title "kivy ui" || true
+
+      - name: Fail if the tests failed
+        if: steps.pytests.outputs.status != '0' || (runner.os == 'Linux' && steps.kivyui.outputs.status != '0')
+        shell: bash
+        run: |
+          echo "::error::pytest exited with ${{ steps.pytests.outputs.status }} (kivy: ${{ steps.kivyui.outputs.status }})"
+          exit 1
 
   # ------------------------------------------------- ready engine binaries
   engine-binaries:
@@ -204,6 +264,116 @@ jobs:
           git commit -m "Stage photocraft-cli $PIN binaries [skip ci]" || echo "nothing to commit"
           git remote set-url origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
           git push --force origin $BIN_BRANCH
+
+  # ------------------------------------------- android engine (probe/build)
+  # Cross-compiles the pinned PhotoCraft engine for Android and hands the result to
+  # the APK job. The engine ships as `libphotocraft_cli.so` per ABI so that the APK's
+  # native-library directory (the only place Android lets an app exec() from) can run it.
+  engine-android:
+    name: Build photocraft-cli (pinned, android)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'branch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout EasyWalp
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Read PhotoCraft pin
+        id: pin
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const pin = JSON.parse(fs.readFileSync("config/photocraft-pin.json", "utf8")).photocraft;
+            for (const [k, v] of Object.entries({ repo: pin.repo, commit: pin.commit, tag: pin.tag, fonts_repo: pin.craft_fonts_repo, fonts_ref: pin.craft_fonts_ref }))
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, k + "=" + v + "\n");
+          '
+
+      - name: Locate the Android NDK
+        id: ndk
+        shell: bash
+        run: |
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+            NDK=$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/ndk/* 2>/dev/null | sort -V | tail -1)
+          fi
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then echo "::error::no Android NDK found on the runner"; exit 1; fi
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "path=$NDK" >> "$GITHUB_OUTPUT"
+          echo "using NDK: $NDK ($(cat "$NDK/source.properties" | tr '\n' ' '))"
+
+      - name: Install Rust (stable + Android targets)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustup target add aarch64-linux-android x86_64-linux-android
+          rustc --version && cargo --version
+
+      - name: Install cargo-ndk
+        shell: bash
+        run: cargo install cargo-ndk --locked
+
+      - name: Check out PhotoCraft (pinned) and craft-fonts (pinned)
+        shell: bash
+        run: |
+          git clone --no-checkout "https://github.com/${{ steps.pin.outputs.repo }}.git" ../photocraft-src
+          git -C ../photocraft-src checkout --detach ${{ steps.pin.outputs.commit }}
+          git clone "https://github.com/${{ steps.pin.outputs.fonts_repo }}.git" ../craft-fonts
+          git -C ../craft-fonts checkout --detach ${{ steps.pin.outputs.fonts_ref }}
+
+      - name: Cache Rust build (keyed by the pin)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ../photocraft-src/target
+          key: photocraft-${{ steps.pin.outputs.commit }}-android
+          restore-keys: photocraft-android
+
+      - name: Cross-compile photocraft-cli
+        id: build
+        shell: bash
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/../craft-fonts
+        run: |
+          set +e
+          (
+            cd ../photocraft-src
+            cargo ndk -t arm64-v8a -t x86_64 -o "$GITHUB_WORKSPACE/engines-android" \
+              build --release --locked -p photocraft-cli
+          ) > android-build.log 2>&1
+          STATUS=$?
+          tail -80 android-build.log
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the build log
+        if: steps.build.outputs.status != '0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/ci/publish_log.py --file android-build.log \
+            --job-name "Build photocraft-cli (pinned, android)" --title "android engine build" || true
+
+      - name: Fail if the cross-compile failed
+        if: steps.build.outputs.status != '0'
+        shell: bash
+        run: exit 1
+
+      - name: Inspect the result
+        shell: bash
+        run: |
+          find engines-android -type f -exec ls -l {} + | sort -k9
+          for so in $(find engines-android -name '*.so'); do
+            echo "--- $so"
+            file "$so"
+            readelf -d "$so" | grep -E "NEEDED|SONAME" || true
+          done
+
+      - name: Upload the Android engine
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: photocraft-cli-android
+          path: engines-android/
 
   # ------------------------------------------------------------- release
   release-engine:
