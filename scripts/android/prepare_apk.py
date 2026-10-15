@@ -131,10 +131,31 @@ def numeric_version(version: str) -> int:
     return major * 10000 + minor * 100 + patch
 
 
+def check_spec_values(spec: str) -> None:
+    """buildozer passes spec values to p4a verbatim - quotes included.
+
+    A quoted `android.apptheme` therefore ends up as
+    `android:theme=""@android:style/...""` in p4a's AndroidManifest template and
+    gradle dies with "ManifestMerger2$MergeFailureException: Error parsing
+    AndroidManifest.xml", several minutes into the build.
+    """
+    for line in spec.splitlines():
+        key, sep, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if not sep or not key.startswith("android."):
+            continue
+        if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
+            raise SystemExit(
+                f"error: {key} is wrapped in {value[0]} quotes - buildozer passes the "
+                f"quotes through and they end up in AndroidManifest.xml; write "
+                f"{key} = {value[1:-1]}")
+
+
 def render_spec(dest: Path, version: str, sdk: str | None, ndk: str | None,
                 p4a_dir: str | None, abis: tuple[str, ...] = ()) -> Path:
     """Copy android/buildozer.spec into the build folder with the values filled in."""
     spec = (ANDROID_DIR / "buildozer.spec").read_text(encoding="utf-8")
+    check_spec_values(spec)
     spec = re.sub(r"(?m)^version = .*$", f"version = {version}", spec)
     if abis:
         spec = re.sub(r"(?m)^android\.archs = .*$", "android.archs = " + ",".join(abis), spec)

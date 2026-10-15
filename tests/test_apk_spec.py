@@ -79,3 +79,19 @@ def test_appless_spec_still_renders(tmp_path, monkeypatch):
     assert parser.get("app", "version") == "2.0.0"
     assert parser.get("app", "android.numeric_version") == "20000"
     assert parser.get("app", "android.sdk_path") == "/sdk"
+
+
+def test_quoted_values_are_rejected(tmp_path, monkeypatch):
+    """buildozer passes spec values on verbatim: quotes must not reach the manifest."""
+    module = _load_module()
+    monkeypatch.setattr(module, "ANDROID_DIR", tmp_path)
+    (tmp_path / "buildozer.spec").write_text(
+        '[app]\nversion = 0.0.0\nandroid.apptheme = "@android:style/Theme.NoTitleBar"\n',
+        encoding="utf-8")
+    with pytest.raises(SystemExit, match="quotes"):
+        module.render_spec(tmp_path / "out", "0.1.0", None, None, None, ())
+
+
+def test_the_shipped_spec_is_clean():
+    module = _load_module()
+    module.check_spec_values((REPO / "android" / "buildozer.spec").read_text(encoding="utf-8"))

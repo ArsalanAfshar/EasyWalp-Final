@@ -37,7 +37,9 @@ requirements = python3,kivy==2.3.1,pillow,pyjnius,android,arabic-reshaper,python
 orientation = portrait
 fullscreen = 0
 # No window title bar: the app draws its own header.
-android.apptheme = "@android:style/Theme.NoTitleBar"
+# No quotes around the value - buildozer passes it to p4a verbatim and p4a renders
+# it into android:theme="...", so quotes here break the manifest XML.
+android.apptheme = @android:style/Theme.NoTitleBar
 
 # The Wallify identity.
 icon.filename = %(source.dir)s/assets/icons/easywalp-512.png
