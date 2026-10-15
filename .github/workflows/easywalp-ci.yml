@@ -865,8 +865,13 @@ jobs:
           Get-ChildItem $exe.DirectoryName | ForEach-Object { Say ("  " + $_.Name) }
 
           Say "== the app answers --version =="
-          $version = (& $exe.FullName --version 2>&1 | Out-String).Trim()
-          Say "EasyWalp.exe --version -> $version"
+          # Windowed exe: use Start-Process -Wait, the call operator neither waits nor
+          # sets $LASTEXITCODE for those.
+          $vp = Start-Process -FilePath $exe.FullName -ArgumentList "--version" -Wait -PassThru \
+            -NoNewWindow -RedirectStandardOutput app-version.txt
+          $version = (Get-Content app-version.txt -Raw -ErrorAction SilentlyContinue).Trim()
+          Say "EasyWalp.exe --version -> $version (exit $($vp.ExitCode))"
+          if ($vp.ExitCode -ne 0) { Say "::error::the installed app exited with $($vp.ExitCode)"; exit 1 }
           if ($version -notmatch "EasyWalp \d") { Say "::error::the installed app could not report its version"; exit 1 }
 
           $engine = Get-ChildItem -Recurse $exe.DirectoryName -Filter photocraft-cli.exe -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -1026,9 +1031,16 @@ jobs:
           $engine = "dist/EasyWalp/_internal/assets/photocraft/photocraft-cli.exe"
           if (-not (Test-Path $app)) { throw "missing $app" }
           if (-not (Test-Path $engine)) { throw "missing $engine" }
-          & $app --version
-          if ($LASTEXITCODE -ne 0) { throw "app exited with $LASTEXITCODE" }
+          # EasyWalp.exe is a *windowed* binary: PowerShell's call operator does not
+          # wait for it and never sets $LASTEXITCODE (it stayed empty, so the check
+          # below always threw). Start-Process -Wait gives us the real exit code and
+          # the version line the app prints.
+          $appProc = Start-Process -FilePath $app -ArgumentList "--version" -Wait -PassThru \
+            -NoNewWindow -RedirectStandardOutput app-version.txt
+          Get-Content app-version.txt -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+          if ($appProc.ExitCode -ne 0) { throw "the app exited with $($appProc.ExitCode)" }
           & $engine --version
+          if ($LASTEXITCODE -ne 0) { throw "the engine exited with $LASTEXITCODE" }
 
       - name: Build Inno Setup installer
         shell: pwsh
