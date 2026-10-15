@@ -22,7 +22,8 @@ The workflow lives at `.github/workflows/easywalp-ci.yml` and is part of the
 repository - there is nothing to install. It runs
 
 - on **every push** to any branch: the test suite (Linux + Windows, offscreen Qt
-  and the Kivy UI under xvfb) and the pinned engine cross-builds;
+  and the Android screens through the app's own self-test) and the pinned engine
+  cross-builds;
 - on a **manual run** (**Actions** → **EasyWalp CI** → **Run workflow**) or a
   `v*` **tag**: the pinned engine, the Windows app + installer, the Android APK
   and the release.
@@ -37,6 +38,8 @@ it like any other file.
    Optional: set *android_abis* to `arm64-v8a,x86` (or `x86`) and tick
    *android_emulator* to also install the APK on an emulator and run the
    on-device self-test (engine, PSD analysis, 2K/4K generation, gallery export).
+   A plain branch push already does that: it builds `arm64-v8a,x86` and runs the
+   self-test on an x86 emulator on its own.
 2. The pipeline builds the pinned PhotoCraft engine, the app, the installer,
    creates the `v0.1.0` tag itself and publishes the release when green.
 

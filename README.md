@@ -132,8 +132,10 @@ APK, then publishes `EasyWalp-Setup-1.2.3-windows.zip`,
 `EasyWalp-Setup-1.2.3.exe`, `EasyWalp-1.2.3-arm64-v8a.apk` and
 `SHA256SUMS.txt` to Releases. A final job (**Windows installer smoke test**)
 installs that very installer on a clean Windows runner, starts the app and checks
-that it stays up; ask for the Android emulator validation on a manual run by
-ticking *android_emulator* and setting *android_abis* to `x86`.
+that it stays up. Every branch build also installs the APK on an Android
+emulator (API 30, x86) and asks the app to run its own self-test there - engine,
+PSD editing, the whole generate pipeline and every screen; the report lands in
+the job log. Tag builds ship the arm64-v8a APK for phones and skip the emulator.
 
 Downloads land on the [Releases](../../releases) page - direct links:
 

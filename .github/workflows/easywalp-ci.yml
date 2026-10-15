@@ -432,6 +432,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 240
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      abis: ${{ steps.ver.outputs.abis }}
+      safe: ${{ steps.ver.outputs.safe }}
     steps:
       - name: Checkout EasyWalp
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -458,8 +462,18 @@ jobs:
           if [ -z "$V" ]; then
             V=$(python -c "import sys; sys.path.insert(0, 'src'); from easywalp import __version__; print(__version__)")
           fi
+          # Tags build what the release page advertises: real phones (arm64-v8a).
+          # Branch runs add x86 so the on-device self-test has an APK the emulator
+          # can actually run - the two ABIs end up in one APK, and the emulator
+          # installs the x86 half of it.
           ABIS="${{ inputs.android_abis }}"
-          [ -n "$ABIS" ] || ABIS="arm64-v8a"
+          if [ -z "$ABIS" ]; then
+            if [ "${{ github.ref_type }}" = "branch" ]; then
+              ABIS="arm64-v8a,x86"
+            else
+              ABIS="arm64-v8a"
+            fi
+          fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "abis=$ABIS" >> "$GITHUB_OUTPUT"
           echo "safe=$(echo "$ABIS" | tr ',' '-')" >> "$GITHUB_OUTPUT"
@@ -684,8 +698,15 @@ jobs:
             gh release create "$TAG" --target "$GITHUB_SHA" --title "EasyWalp ${TAG#v}" \
               --notes "EasyWalp ${TAG#v} - Windows installer and Android APK." || true
           fi
+          # The README points at EasyWalp-<version>-<abis>.apk, which is not the
+          # name buildozer produces, so a copy with that name travels with it.
+          mkdir -p release-assets
+          APK=$(ls android/build/app/bin/*.apk | head -1)
+          TIDY="release-assets/EasyWalp-${TAG#v}-${{ steps.ver.outputs.safe }}.apk"
+          cp "$APK" "$TIDY"
+          ls -l "$APK" "$TIDY"
           for attempt in 1 2 3 4 5; do
-            if gh release upload "$TAG" android/build/app/bin/*.apk --clobber; then exit 0; fi
+            if gh release upload "$TAG" "$APK" "$TIDY" --clobber; then exit 0; fi
             sleep 15
           done
           echo "::error::could not attach the APK to $TAG"
@@ -699,27 +720,34 @@ jobs:
   android-selftest:
     name: On-device self-test (Android emulator)
     needs: [apk]
-    if: github.event_name == 'workflow_dispatch' && inputs.android_emulator
+    # Branch runs always carry an x86 APK (see "Resolve version and ABIs"), so the
+    # self-test does not need a manual dispatch any more. Tag runs ship arm64 only
+    # and skip it.
+    if: (github.event_name == 'workflow_dispatch' && inputs.android_emulator) || (github.event_name == 'push' && github.ref_type == 'branch')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: Checkout EasyWalp
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Work out the APK artefact name
-        id: name
-        shell: bash
-        run: |
-          # The apk job replaces the commas in android_abis with dashes.
-          SAFE=$(echo "${{ inputs.android_abis }}" | tr ',' '-')
-          echo "safe=$SAFE" >> "$GITHUB_OUTPUT"
-          echo "looking for easywalp-apk-${{ inputs.version }}-$SAFE"
-
       - name: Download the APK
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: easywalp-apk-${{ inputs.version }}-${{ steps.name.outputs.safe }}
+          name: easywalp-apk-${{ needs.apk.outputs.version }}-${{ needs.apk.outputs.safe }}
           path: apk
+
+      - name: Check the APK we got
+        shell: bash
+        run: |
+          ls -l apk
+          APK=$(ls apk/*.apk | head -1)
+          python - "$APK" <<'PY'
+          import sys, zipfile
+          names = zipfile.ZipFile(sys.argv[1]).namelist()
+          libs = sorted({n.split("/")[1] for n in names if n.startswith("lib/")})
+          print("ABIs in the APK:", libs)
+          assert "x86" in libs, "no x86 library in the APK - the emulator cannot run it"
+          PY
 
       - name: Boot an emulator and run the self-test
         id: device
