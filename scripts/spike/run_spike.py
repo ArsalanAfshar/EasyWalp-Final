@@ -121,7 +121,8 @@ def diff_stats(a_path: Path, b_path: Path) -> tuple[float, tuple[int, int, int, 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cli", required=True, type=Path)
+    ap.add_argument("--cli", default=None, type=Path,
+                    help="path to photocraft-cli (default: env EASYWALP_ENGINE, the engines folder, or PATH)")
     ap.add_argument("--psd", required=True, type=Path)
     ap.add_argument("--out", default=Path("spike-out"), type=Path)
     ap.add_argument("--desktop", type=Path, default=None)
@@ -131,7 +132,12 @@ def main() -> int:
 
     args.out.mkdir(parents=True, exist_ok=True)
     rep = Report(args.out)
-    binary = PhotoCraftBinary(args.cli)
+    try:
+        binary = PhotoCraftBinary(args.cli)
+    except Exception as e:
+        print(f"error: {e}\nRun the 'PhotoCraft binaries' workflow (see docs/RELEASE-CHECKLIST.md), "
+              "then: python scripts/fetch_engine.py", file=sys.stderr)
+        return 2
     rep.h2("Engine")
     rep.kv([("binary", binary.path), ("version", binary.version()), ("psd", args.psd.name),
             ("psd size (MB)", f"{args.psd.stat().st_size / 1e6:.1f}")])
@@ -151,7 +157,7 @@ def main() -> int:
             ("font warnings", json.dumps(info.get("warnings", []), ensure_ascii=False))])
     (args.out / "info.json").write_text(json.dumps(info, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    _, layers, smart, fills, texts = find_layers(args.cli, args.psd)
+    _, layers, smart, fills, texts = find_layers(binary.path, args.psd)
     rep.h2("Detected layers (auto)")
     rep.kv([("Smart Object layers", ", ".join(f"{l['name']}" for l in smart) or "NONE"),
             ("Fill layers", ", ".join(f"{l['name']}" for l in fills) or "NONE"),
