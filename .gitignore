@@ -1,0 +1,36 @@
+# --- EasyWalp ---
+# Never commit private PSDs, sample photos or staged downloads
+*.psd
+*.psb
+google_drive/
+_private/
+samples/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.spec.bak
+
+# PyInstaller
+easywalp-build/
+easywalp-dist/
+
+# PhotoCraft build/cache artefacts (built in CI, never committed)
+photocraft/
+photocraft-bin/
+target/
+third_party/photocraft/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
