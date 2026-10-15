@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self.last_result = None
 
         self.setWindowTitle(__app_name__)
+        self.setAcceptDrops(True)
         icon_path = bundled_dir() / "icons" / "easywalp.ico"
         if not icon_path.exists():
             icon_path = bundled_dir() / "icons" / "easywalp-256.png"
@@ -455,6 +456,29 @@ class MainWindow(QMainWindow):
                 return
             WizardDialog(self.settings, binary, self).exec()
 
+    # ------------------------------------------------- .easywalp drag & drop
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasUrls() and any(
+            u.toLocalFile().lower().endswith(".easywalp") for u in event.mimeData().urls()
+        ):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        from ..presets import import_preset as _import_preset
+
+        for url in event.mimeData().urls():
+            file = url.toLocalFile()
+            if not file.lower().endswith(".easywalp"):
+                continue
+            try:
+                preset = _import_preset(Path(file), __version__)
+            except PresetError as e:
+                QMessageBox.critical(self, i18n.tr("error.title"), i18n.tr("preset.importFailed", error="") + str(e))
+                continue
+            self.reload_presets(select_id=preset.id)
+            QMessageBox.information(self, __app_name__, i18n.tr("preset.imported", name=preset.name))
+        event.acceptProposedAction()
+
     # ------------------------------------------------------------- closing
     def closeEvent(self, event) -> None:  # noqa: N802
         g = self.geometry()
@@ -490,7 +514,21 @@ def _open_in_explorer(path: Path) -> None:
         subprocess.Popen(["xdg-open", str(path)])
 
 
-def run_app(argv: list[str]) -> int:
+def import_and_run(package: str) -> int:
+    """Entry for the .easywalp file association: import, then open the GUI."""
+    logging_setup.setup()
+    name, error = "", ""
+    try:
+        from ..presets import import_preset as _import_preset
+
+        name = _import_preset(Path(package), __version__).name
+    except Exception as e:
+        log.warning("preset import failed: %s", e)
+        error = str(e)
+    return run_app([], imported_name=name, import_error=error)
+
+
+def run_app(argv: list[str], imported_name: str = "", import_error: str = "") -> int:
     logging_setup.setup()
     log.info("EasyWalp %s on %s / Python %s", __version__, platform.platform(), platform.python_version())
     app = QApplication(argv)
@@ -505,5 +543,11 @@ def run_app(argv: list[str]) -> int:
     win.apply_theme()
     win.apply_language()
     win.show()
+    if imported_name:
+        QTimer.singleShot(300, lambda: QMessageBox.information(
+            win, __app_name__, i18n.tr("preset.imported", name=imported_name)))
+    if import_error:
+        QTimer.singleShot(300, lambda: QMessageBox.critical(
+            win, i18n.tr("error.title"), i18n.tr("preset.importFailed", error=import_error)))
     QTimer.singleShot(200, win.maybe_open_wizard)
     return app.exec()
