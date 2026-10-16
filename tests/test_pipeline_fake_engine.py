@@ -207,3 +207,69 @@ def test_preset_saves_and_loads_the_colour_mode(data_dir):
     assert old.solid_color_fill is not None
     assert old.solid_color_fill.uses_color_overlay is False
     assert old.solid_color_fill.to_dict() == {"id": 21, "name": "BG Overlay", "kind": "Fill"}
+
+
+def test_a_preset_without_a_recorded_contents_size_is_healed_not_refused(
+    tmp_path, data_dir, sample_images
+):
+    """The "recreate the preset" dead end must not exist any more.
+
+    `0.1.2` and older could save a preset whose smart-object contents size was never
+    recorded (the wizard's probe was rejected by the engine sandbox). Generating with
+    such a preset used to stop with "the preset does not record the desktop smart
+    object's contents size; recreate the preset" - the size is now read from the
+    smart object itself, the run continues and the preset is updated, so nothing has
+    to be recreated.
+    """
+    from unittest import mock
+
+    import easywalp.paths
+    import os
+
+    shim = _shim(tmp_path)
+    os.environ["FAKE_STATE_DIR"] = str(tmp_path)
+    desktop, mobile = sample_images
+    preset = _preset(data_dir)
+    preset.desktop_contents.width, preset.desktop_contents.height = 0, 0
+    preset.mobile_contents.width, preset.mobile_contents.height = 0, 0
+    preset.save()
+
+    with mock.patch.object(easywalp.paths, "temp_dir", return_value=tmp_path / "tmpdata-heal"):
+        result = Pipeline(FakeBinary(shim)).generate(
+            preset, desktop, mobile, "O", 12, data_dir / "out-heal"
+        )
+
+    assert result.preview_jpg.exists()
+    assert (result.out_dir).is_dir()
+    assert any("contents size" in w for w in result.warnings)
+    # the sizes the fake engine handed back (SO 12 -> 1600x900, SO 15 -> 900x1600)
+    assert (preset.desktop_contents.width, preset.desktop_contents.height) == (1600, 900)
+    assert (preset.mobile_contents.width, preset.mobile_contents.height) == (900, 1600)
+    # ... and they are persisted, so the next run needs no probe
+    assert Preset.load(preset.dir).desktop_contents.width == 1600
+
+
+def test_a_replacement_is_still_refused_when_its_aspect_ratio_is_wrong(
+    tmp_path, data_dir, tiny_images
+):
+    """Healing the size must not disable the distortion guard behind it."""
+    from unittest import mock
+
+    import easywalp.paths
+    import os
+
+    import pytest as _pytest
+
+    from easywalp.pipeline import PipelineError
+
+    shim = _shim(tmp_path)
+    os.environ["FAKE_STATE_DIR"] = str(tmp_path)
+    desktop, mobile = tiny_images
+    preset = _preset(data_dir)
+    # say the desktop contents are square while the 16:9 source is not
+    preset.desktop_contents.width, preset.desktop_contents.height = 1000, 1000
+    preset.save()
+    with mock.patch.object(easywalp.paths, "temp_dir", return_value=tmp_path / "tmpdata-aspect"):
+        with _pytest.raises(PipelineError) as err:
+            Pipeline(FakeBinary(shim)).generate(preset, desktop, mobile, "O", 13, data_dir / "out-aspect")
+    assert "does not match" in str(err.value)

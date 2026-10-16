@@ -10,6 +10,6 @@ __app_name__ = "EasyWalp"
 try:  # stamped by the release CI (scripts/release/stage_payload.py)
     from ._build_version import BUILD_VERSION as __version__
 except ImportError:  # source checkout
-    __version__ = "0.1.2"
+    __version__ = "0.1.3"
 
 APP_ID = "EasyWalp"

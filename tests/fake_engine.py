@@ -22,6 +22,44 @@ FAKE_ENGINE = r'''
 import json, os, sys, struct, zlib
 
 work = os.getcwd()
+
+# ---- automation roots ------------------------------------------------------
+# `serve` is sandboxed exactly like the real engine: doc.open/doc.place may only
+# read inside --automation-read-root, doc.save/doc.exportLayers only write inside
+# --automation-write-root (relative request paths resolve beneath the root, an
+# absolute path is accepted only when it lies under it). Emulating that here is
+# what makes the tests catch "EasyWalp opened the preset's PSD from a session
+# rooted in a subfolder of it" - the real engine answered with
+# "automation path rejected: absolute paths must be inside the automation root".
+_argv = sys.argv[1:]
+def _root(name):
+    return _argv[_argv.index(name) + 1] if name in _argv else None
+READ_ROOT = _root("--automation-read-root")
+WRITE_ROOT = _root("--automation-write-root")
+
+
+def _norm(path):
+    return os.path.normcase(os.path.normpath(os.path.abspath(path)))
+
+
+def _allowed(root, path):
+    """(ok, error) for one request path, mirroring workspace.rs`request_path`."""
+    if not root:
+        return False, "automation filesystem access is not granted"
+    if not os.path.isabs(path):
+        return True, ""            # relative: resolved beneath the root
+    root_n, path_n = _norm(root), _norm(path)
+    if path_n == root_n or path_n.startswith(root_n + os.sep):
+        return True, ""
+    return False, ("automation path rejected: absolute paths must be inside the "
+                   "automation root: `%s`" % path)
+
+
+def _check(root, path):
+    ok, error = _allowed(root, path)
+    if not ok:
+        return False, {"error": error}
+    return True, None
 state_path = os.path.join(os.environ.get("FAKE_STATE_DIR", work), "calls.json")
 state = {"calls": [], "text": "Code:MD-O-C236", "font": "Vazirmatn"}
 if os.path.exists(state_path):
@@ -71,21 +109,40 @@ def handle(rid, method, params):
     """Return (ok, payload) for one serve request."""
     params = params or {}
     if method == "doc.open":
+        ok, err = _check(READ_ROOT, params.get("path", ""))
+        if not ok:
+            return False, err
+        return True, {}
+    if method == "doc.place":
+        ok, err = _check(READ_ROOT, params.get("path", ""))
+        if not ok:
+            return False, err
+        state["calls"].append({"cmd": method, "params": params})
+        save_state()
         return True, {}
     if method == "doc.inspect":
         return True, DOC
     if method == "doc.exportLayers":
         out = params.get("dir", ".")
+        ok, err = _check(WRITE_ROOT, out if os.path.isabs(out) else os.path.join(WRITE_ROOT or work, out))
+        if not ok:
+            return False, err
         top = [l for l in DOC["layers"] if l["kind"] != "Adjustment"]
         for index, layer in enumerate(top):
             name = "layer_%04d_%s.png" % (index, layer["name"].replace(" ", "_"))
             open(os.path.join(out, name), "wb").write(png_bytes((60, 40)))
         return True, {"count": 4}
     if method == "doc.render":
+        ok, err = _check(WRITE_ROOT, params["path"])
+        if not ok:
+            return False, err
         open(params["path"], "wb").write(png_bytes((800, 600)))
         return True, {"path": params["path"]}
     if method == "doc.save":
         out = params["path"]
+        ok, err = _check(WRITE_ROOT, out if os.path.isabs(out) else os.path.join(WRITE_ROOT or work, out))
+        if not ok:
+            return False, err
         open(out, "wb").write(png_bytes((2000, 1500)))
         state["calls"].append({"cmd": "doc.save", "params": {"quality": params.get("quality")}})
         save_state()
@@ -116,6 +173,9 @@ def handle(rid, method, params):
             layer = int(p.get("layer", 0))
             size = SO_SIZES.get(layer, (1600, 900))
             target = os.path.join(os.getcwd(), p["path"])
+            ok, err = _check(WRITE_ROOT, target)
+            if not ok:
+                return False, err
             os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
             open(target, "wb").write(png_bytes(size))
             state["calls"].append({"cmd": cmd, "params": p, "size": list(size)})
@@ -159,7 +219,7 @@ def handle(rid, method, params):
         state["calls"].append({"cmd": cmd, "params": p})
         save_state()
         return True, {}
-    if method in ("doc.new", "doc.place"):
+    if method == "doc.new":
         state["calls"].append({"cmd": method, "params": params})
         save_state()
         return True, {}

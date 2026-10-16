@@ -129,7 +129,9 @@ def export_layer_thumbnails(binary: PhotoCraftBinary, psd: Path, dest_dir: Path)
     PhotoCraft writes in the same top-to-bottom order as `doc.inspect`.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
-    with Session(binary, work_root=dest_dir) as session:
+    # The engine may only *read* inside its read root, and the PSD being inspected
+    # lives next to (not under) the scratch dir the exports go to.
+    with Session(binary, work_root=dest_dir, read_root=psd.parent) as session:
         session.start()
         session.open(psd)
         session.call("doc.exportLayers", {"dir": ".", "format": "png", "visibleOnly": False})
@@ -170,7 +172,10 @@ def smart_object_contents(
     """Export a smart object's stored contents and return (width, height, file)."""
     work_dir.mkdir(parents=True, exist_ok=True)
     out = work_dir / f"so-{layer_ref.id}.png"
-    with Session(binary, work_root=work_dir) as session:
+    # Read the preset's PSD (its own folder) while writing the exported PNG into the
+    # scratch dir: without the explicit read root the engine refuses the open with
+    # "automation path rejected: absolute paths must be inside the automation root".
+    with Session(binary, work_root=work_dir, read_root=psd.parent) as session:
         session.start()
         session.open(psd)
         layers = _flatten_layers(session.inspect())

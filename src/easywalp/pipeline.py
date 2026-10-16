@@ -261,6 +261,47 @@ def validate_sources(desktop_src: Path, mobile_src: Path, info: CodeInfo) -> lis
 
 
 # ------------------------------------------------------------------- pipeline
+def _record_contents_size(
+    session: Session,
+    preset: Preset,
+    engine_id: object,
+    contents: object,
+    label: str,
+    work_dir: Path,
+    warnings: list[str],
+) -> None:
+    """Read a smart object's stored contents size (``contents``) and remember it.
+
+    ``layer.smartObjects.exportContents`` writes the object's own contents next to
+    the running engine (inside the session's write root), so the size is measured
+    from the very file the replacement has to match.
+    """
+    name = f"contents-size-{label}.png"
+    try:
+        session.execute("layer.smartObjects.exportContents", {"layer": engine_id, "path": name})
+        with Image.open(work_dir / name) as im:
+            width, height = im.size
+    except Exception as exc:  # noqa: BLE001 - the caller reports, the run decides
+        raise PipelineError(
+            f"the preset does not record the {label} smart object's contents size and it "
+            f"could not be read from the PSD ({exc}); map the smart objects in the wizard "
+            "and try again"
+        ) from exc
+    if width <= 0 or height <= 0:
+        raise PipelineError(
+            f"the {label} smart object handed back no stored contents; recreate the preset"
+        )
+    contents.width, contents.height = width, height
+    warnings.append(
+        f"the preset did not record the {label} smart object's contents size; "
+        f"it was read from the PSD ({width}x{height}) and saved"
+    )
+    try:
+        preset.save()
+    except Exception:  # noqa: BLE001 - a read-only preset folder must not stop a run
+        log.warning("could not save the recovered %s contents size into the preset", label, exc_info=True)
+
+
 class PipelineError(RuntimeError):
     """A readable, user-actionable pipeline failure."""
 
@@ -409,15 +450,17 @@ class Pipeline:
             text_id = _resolve_layer(layers, text_ref, "text", warnings)
 
             # Replacement files must match each smart object's stored contents size,
-            # so the mockup layout is identical for 2K and 4K runs.
-            for ref, contents, jpg, label in (
-                (desktop_ref, preset.desktop_contents, desktop_jpg, "desktop"),
-                (mobile_ref, preset.mobile_contents, mobile_jpg, "mobile"),
+            # so the mockup layout is identical for 2K and 4K runs. A preset written
+            # before the wizard recorded the size (or one whose probe failed) is
+            # healed here instead of being refused: the size is read straight off the
+            # smart object's stored contents and saved into the preset.
+            for engine_id, ref, contents, jpg, label in (
+                (desktop_id, desktop_ref, preset.desktop_contents, desktop_jpg, "desktop"),
+                (mobile_id, mobile_ref, preset.mobile_contents, mobile_jpg, "mobile"),
             ):
                 if contents.width <= 0 or contents.height <= 0:
-                    raise PipelineError(
-                        f"the preset does not record the {label} smart object's contents size; "
-                        "recreate the preset"
+                    _record_contents_size(
+                        session, preset, engine_id, contents, label, work_dir, warnings
                     )
                 with Image.open(jpg) as im:
                     src_w, src_h = im.size

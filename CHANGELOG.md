@@ -3,6 +3,28 @@
 All notable changes to EasyWalp are documented here. Format: Keep a Changelog,
 Semantic Versioning.
 
+## [0.1.3] - 2026-10-16
+
+### Fixed
+- **Desktop: the wizard's last step failed with "the preset does not record the
+  desktop smart object's contents size; recreate the preset".** The engine runs
+  sandboxed - one folder it may read from, one it may write to - and the wizard
+  asked it to open the preset's own `template.psd` from a session whose read root
+  was the scratch subfolder *inside* the preset folder. The engine answered
+  `automation path rejected: absolute paths must be inside the automation root:
+  C:\Users\<you>\AppData\Roaming\EasyWalp\presets\<id>\template.psd`; with the
+  contents size unknown, the dry run stopped before it started. Sessions now carry
+  an explicit read root (the preset folder) next to their write root (the scratch
+  folder), so a preset created with an earlier version works again - there is
+  nothing to recreate. The same shape was fixed for the PSD the Android app picks
+  and for the wizard's layer-thumbnail pass.
+- **A preset with no recorded contents size is now healed instead of refused.** If
+  a preset does not know the smart objects' contents size (created before this fix,
+  or its probe failed), generating reads the size straight off the smart object,
+  carries on with the run and saves the size into the preset instead of stopping
+  with "recreate the preset". The aspect-ratio guard that stops a wrongly mapped
+  layer from being stretched is untouched.
+
 ## [0.1.2] - 2026-10-16
 
 ### Fixed

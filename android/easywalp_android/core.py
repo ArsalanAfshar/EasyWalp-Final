@@ -146,7 +146,9 @@ class Core:
         warnings = [str(w) for w in (doc.get("warnings") or [])]
 
         work_dir.mkdir(parents=True, exist_ok=True)
-        with Session(binary, work_root=work_dir) as session:
+        # The session writes under work_dir but has to read the PSD the user picked,
+        # wherever that is - so the read root is the PSD's own folder.
+        with Session(binary, work_root=work_dir, read_root=psd.parent) as session:
             session.start()
             session.open(psd)
             flat = _flatten_layers(session.inspect())

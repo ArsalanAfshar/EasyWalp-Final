@@ -140,13 +140,13 @@ job log. Tag builds ship the arm64-v8a APK for phones and skip the emulator.
 Downloads land on the [Releases](../../releases) page - direct links:
 
 ```
-Windows (installer)          https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.2.exe
-Windows (no install needed)  https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Portable-0.1.2.exe
-Windows (everything, zipped) https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.2-windows.zip
-Android (phone, arm64)       https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-0.1.2-arm64-v8a.apk
+Windows (installer)          https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.3.exe
+Windows (no install needed)  https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Portable-0.1.3.exe
+Windows (everything, zipped) https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.3-windows.zip
+Android (phone, arm64)       https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-0.1.3-arm64-v8a.apk
 ```
 
-*Stuck on "the app does not start"? Take `EasyWalp-Portable-0.1.2.exe` - one file,
+*Stuck on "the app does not start"? Take `EasyWalp-Portable-0.1.3.exe` - one file,
 nothing to unzip, nothing to install. The installer is unsigned, so Windows
 SmartScreen asks once ("More info" -> "Run anyway"); the zip contains all three.*
 Step-by-step for non-developers: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
@@ -191,13 +191,13 @@ config/              photocraft-pin.json (exact engine commit, reproducible buil
 > **لینک‌های دانلود** (همیشه در صفحهٔ [Releases](../../releases) هم هستند):
 >
 > ```
-> ویندوز - نصب‌کننده          https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.2.exe
-> ویندوز - بدون نصب (تک‌فایل)  https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Portable-0.1.2.exe
-> ویندوز - همه‌چیز، زیپ‌شده     https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.2-windows.zip
-> اندروید - گوشی (arm64)      https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-0.1.2-arm64-v8a.apk
+> ویندوز - نصب‌کننده          https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.3.exe
+> ویندوز - بدون نصب (تک‌فایل)  https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Portable-0.1.3.exe
+> ویندوز - همه‌چیز، زیپ‌شده     https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-Setup-0.1.3-windows.zip
+> اندروید - گوشی (arm64)      https://github.com/ArsalanAfshar/EasyWalp-Final/releases/latest/download/EasyWalp-0.1.3-arm64-v8a.apk
 > ```
 >
-> اگر «برنامه باز نمی‌شود»، فایل تک‌فایل `EasyWalp-Portable-0.1.2.exe` را بگیرید:
+> اگر «برنامه باز نمی‌شود»، فایل تک‌فایل `EasyWalp-Portable-0.1.3.exe` را بگیرید:
 > نه باید جایی باز (Extract) شود و نه نصب. نصب‌کننده امضای دیجیتال ندارد، پس
 > ویندوز ممکن است یک‌بار SmartScreen نشان دهد: «More info» → «Run anyway».
 

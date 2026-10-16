@@ -94,9 +94,27 @@ class PhotoCraftBinary:
 class Session:
     """A long-lived headless PhotoCraft session over stdio JSON lines."""
 
-    def __init__(self, binary: PhotoCraftBinary, work_root: Path) -> None:
+    def __init__(
+        self,
+        binary: PhotoCraftBinary,
+        work_root: Path,
+        *,
+        read_root: Path | None = None,
+        write_root: Path | None = None,
+    ) -> None:
+        """A session rooted at ``work_root``.
+
+        The engine is sandboxed: ``doc.open``/``doc.place`` accept only paths inside
+        the *read* root and ``doc.save``/``doc.exportLayers`` only write inside the
+        *write* root (one directory each - see PhotoCraft's
+        ``automation::workspace``). Both default to ``work_root``; a caller that has
+        to read a file from somewhere else (the wizard opens the preset's PSD while
+        its scratch space is a subfolder of it) passes ``read_root`` explicitly.
+        """
         self.binary = binary
-        self.work_root = work_root
+        self.work_root = Path(work_root)
+        self.read_root = Path(read_root) if read_root is not None else self.work_root
+        self.write_root = Path(write_root) if write_root is not None else self.work_root
         self._proc: subprocess.Popen[str] | None = None
         self._next_id = 1
         self._lock = threading.Lock()
@@ -112,12 +130,11 @@ class Session:
     def start(self) -> None:
         if self._proc and self._proc.poll() is None:
             return
-        root = str(self.work_root)
         cmd = [
             str(self.binary.path),
             "serve",
-            "--automation-read-root", root,
-            "--automation-write-root", root,
+            "--automation-read-root", str(self.read_root),
+            "--automation-write-root", str(self.write_root),
         ]
         log.info("starting engine: %s", " ".join(cmd))
         self._proc = subprocess.Popen(
